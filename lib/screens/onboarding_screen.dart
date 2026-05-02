@@ -172,10 +172,10 @@ class _OnboardingScreenState extends State<OnboardingScreen>
                             padding: const EdgeInsets.symmetric(
                                 horizontal: 14, vertical: 7),
                             decoration: BoxDecoration(
-                              color: Colors.white.withOpacity(0.12),
+                              color: Colors.white.withValues(alpha: 0.12),
                               borderRadius: BorderRadius.circular(20),
                               border: Border.all(
-                                  color: Colors.white.withOpacity(0.2)),
+                                  color: Colors.white.withValues(alpha: 0.2)),
                             ),
                             child: const Text(
                               'Skip',
@@ -257,15 +257,15 @@ class _IllustrationPanel extends StatelessWidget {
               width: 160,
               height: 160,
               decoration: BoxDecoration(
-                color: Colors.white.withOpacity(0.12),
+                color: Colors.white.withValues(alpha: 0.12),
                 shape: BoxShape.circle,
                 border: Border.all(
-                  color: Colors.white.withOpacity(0.2),
+                  color: Colors.white.withValues(alpha: 0.2),
                   width: 2,
                 ),
                 boxShadow: [
                   BoxShadow(
-                    color: slide.accent.withOpacity(0.25),
+                    color: slide.accent.withValues(alpha: 0.25),
                     blurRadius: 48,
                     spreadRadius: 8,
                   ),
@@ -290,10 +290,10 @@ class _IllustrationPanel extends StatelessWidget {
                         padding: const EdgeInsets.symmetric(
                             horizontal: 14, vertical: 7),
                         decoration: BoxDecoration(
-                          color: Colors.white.withOpacity(0.12),
+                          color: Colors.white.withValues(alpha: 0.12),
                           borderRadius: BorderRadius.circular(20),
                           border: Border.all(
-                              color: Colors.white.withOpacity(0.2)),
+                              color: Colors.white.withValues(alpha: 0.2)),
                         ),
                         child: Row(
                           mainAxisSize: MainAxisSize.min,
@@ -344,12 +344,12 @@ class _ContentPanel extends StatelessWidget {
       margin: const EdgeInsets.fromLTRB(20, 0, 20, 24),
       padding: const EdgeInsets.all(28),
       decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.10),
+        color: Colors.white.withValues(alpha: 0.10),
         borderRadius: BorderRadius.circular(28),
-        border: Border.all(color: Colors.white.withOpacity(0.18)),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.18)),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.1),
+            color: Colors.black.withValues(alpha: 0.1),
             blurRadius: 20,
             offset: const Offset(0, 8),
           ),
@@ -377,7 +377,7 @@ class _ContentPanel extends StatelessWidget {
             slide.subtitle,
             style: TextStyle(
               fontSize: 14,
-              color: Colors.white.withOpacity(0.72),
+              color: Colors.white.withValues(alpha: 0.72),
               height: 1.6,
             ),
           ),
@@ -399,7 +399,7 @@ class _ContentPanel extends StatelessWidget {
                     decoration: BoxDecoration(
                       color: i == currentPage
                           ? slide.accent
-                          : Colors.white.withOpacity(0.3),
+                          : Colors.white.withValues(alpha: 0.3),
                       borderRadius: BorderRadius.circular(4),
                     ),
                   ),
@@ -422,7 +422,7 @@ class _ContentPanel extends StatelessWidget {
                     borderRadius: BorderRadius.circular(16),
                     boxShadow: [
                       BoxShadow(
-                        color: slide.accent.withOpacity(0.4),
+                        color: slide.accent.withValues(alpha: 0.4),
                         blurRadius: 16,
                         offset: const Offset(0, 4),
                       ),

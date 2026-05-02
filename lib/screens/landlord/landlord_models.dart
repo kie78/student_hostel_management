@@ -213,21 +213,26 @@ class LandlordBooking {
     }
   }
 
-  /// Parse from the student booking API shape that landlord can observe.
-  /// Adjust field mapping when a dedicated landlord bookings endpoint is added.
-  factory LandlordBooking.fromApi(Map<String, dynamic> json) {
+  /// Parse from GET /landlord/hostels/:hostelId/bookings response shape.
+  /// [hostelId] and [hostelName] come from the URL context, not the response body.
+  factory LandlordBooking.fromApi(
+    Map<String, dynamic> json, {
+    required String hostelId,
+    required String hostelName,
+  }) {
     // --- status ---
     final rawStatus = json['status']?.toString().toLowerCase() ?? 'pending';
     BookingStatusEnum status;
     switch (rawStatus) {
       case 'confirmed':  status = BookingStatusEnum.confirmed;  break;
       case 'active':     status = BookingStatusEnum.active;     break;
+      case 'terminated': status = BookingStatusEnum.completed;  break;
       case 'completed':  status = BookingStatusEnum.completed;  break;
       case 'cancelled':  status = BookingStatusEnum.cancelled;  break;
       default:           status = BookingStatusEnum.pending;
     }
 
-    // --- payment status derived from payments array ---
+    // --- payment amounts from payments array ---
     final payments = json['payments'] as List<dynamic>? ?? [];
     double amountPaid = 0;
     for (final p in payments) {
@@ -235,9 +240,12 @@ class LandlordBooking {
         amountPaid += double.tryParse(p['amount'].toString()) ?? 0;
       }
     }
-    final roomPrice = double.tryParse(
-            json['room']?['price']?.toString() ?? '0') ??
-        0;
+
+    // --- room data ---
+    final room = json['room'] as Map<String, dynamic>? ?? {};
+    final roomPrice =
+        double.tryParse(room['price']?.toString() ?? '0') ?? 0;
+
     PaymentStatusEnum paymentStatus;
     if (amountPaid == 0) {
       paymentStatus = PaymentStatusEnum.pending;
@@ -247,10 +255,6 @@ class LandlordBooking {
       paymentStatus = PaymentStatusEnum.partial;
     }
 
-    // --- room / hostel data ---
-    final room = json['room'] as Map<String, dynamic>? ?? {};
-    final hostel = room['hostel'] as Map<String, dynamic>? ?? {};
-
     // --- student data ---
     final student = json['student'] as Map<String, dynamic>? ?? {};
     final studentName =
@@ -258,14 +262,14 @@ class LandlordBooking {
 
     return LandlordBooking(
       id: json['id'] as String? ?? '',
-      hostelId: hostel['id'] as String? ?? '',
-      hostelName: hostel['hostelName'] as String? ?? '',
+      hostelId: hostelId,
+      hostelName: hostelName,
       roomType: _formatRoomType(room['roomType']?.toString()),
       studentName: studentName.isEmpty ? 'Unknown Student' : studentName,
       studentId: student['registrationNumber'] as String? ?? '',
-      studentPhone: student['phone'] as String? ?? '',
+      studentPhone: '',
       studentEmail: student['studentEmail'] as String? ?? '',
-      university: student['university']?['universityName'] as String? ?? '',
+      university: '',
       moveInDate:
           DateTime.tryParse(json['createdAt']?.toString() ?? '') ??
               DateTime.now(),
@@ -460,6 +464,46 @@ class ApiService {
         .toList();
   }
 
+  /// GET /landlord/hostels/:hostelId/bookings for every hostel, in parallel.
+  static Future<List<LandlordBooking>> fetchAllBookings(
+      List<LandlordHostel> hostels) async {
+    if (hostels.isEmpty) return [];
+    final opts = await _authOptions();
+    final results = await Future.wait(
+      hostels.map((hostel) async {
+        try {
+          final resp = await _dio.get(
+            '/landlord/hostels/${hostel.id}/bookings',
+            options: opts,
+          );
+          final data = resp.data['data'] as List<dynamic>? ?? [];
+          return data
+              .map((e) => LandlordBooking.fromApi(
+                    e as Map<String, dynamic>,
+                    hostelId: hostel.id,
+                    hostelName: hostel.name,
+                  ))
+              .toList();
+        } catch (_) {
+          return <LandlordBooking>[];
+        }
+      }),
+    );
+    return results.expand((list) => list).toList();
+  }
+
+  /// PATCH /landlord/hostels/:hostelId/bookings/:bookingId/terminate
+  static Future<void> terminateBooking({
+    required String hostelId,
+    required String bookingId,
+  }) async {
+    final opts = await _authOptions();
+    await _dio.patch(
+      '/landlord/hostels/$hostelId/bookings/$bookingId/terminate',
+      options: opts,
+    );
+  }
+
   /// POST /landlord/hostels  (multipart/form-data)
   /// [imagePaths] — absolute file paths on device to upload.
   static Future<LandlordHostel> createHostel({
@@ -613,10 +657,15 @@ class LandlordStore {
       _bookings.where((b) => b.status == BookingStatusEnum.pending).length;
 
   static int get totalOccupied =>
-      _hostels.fold(0, (sum, h) => sum + h.occupiedRooms);
+      _bookings.where((b) => b.status == BookingStatusEnum.active).length;
 
   static int get totalCapacity =>
       _hostels.fold(0, (sum, h) => sum + h.totalRooms);
+
+  static int get availableRooms {
+    final available = totalCapacity - totalOccupied;
+    return available < 0 ? 0 : available;
+  }
 
   // ── Local mutations (optimistic UI updates) ──
   static void addHostel(LandlordHostel hostel) =>

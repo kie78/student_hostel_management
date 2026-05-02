@@ -25,31 +25,10 @@ class AddRoomScreen extends StatefulWidget {
 class _AddRoomScreenState extends State<AddRoomScreen> {
   final _formKey = GlobalKey<FormState>();
   final _priceController = TextEditingController();
-  final _slotsController = TextEditingController();
-  final _descriptionController = TextEditingController();
-
-  final List<String> _selectedFeatures = [];
-
-  final Map<RoomTypeEnum, List<String>> _defaultFeatures = {
-    RoomTypeEnum.singleSelfContained: [
-      'Ensuite bathroom', 'Study desk', 'Wardrobe',
-      'WiFi', 'Balcony', 'Ceiling fan', 'Mini fridge',
-      'Window', 'Power sockets', 'Security lock',
-    ],
-    RoomTypeEnum.doubleSelfContained: [
-      'Ensuite bathroom', 'Two study desks', 'Two wardrobes',
-      'WiFi', 'Ceiling fan', 'Two beds', 'Shared mini fridge',
-      'Window', 'Power sockets', 'Security lock',
-    ],
-  };
-
-  bool _isAvailable = true;
 
   @override
   void dispose() {
     _priceController.dispose();
-    _slotsController.dispose();
-    _descriptionController.dispose();
     super.dispose();
   }
 
@@ -73,13 +52,8 @@ class _AddRoomScreenState extends State<AddRoomScreen> {
       type: widget.type,
       pricePerMonth:
           double.parse(_priceController.text.replaceAll(',', '')),
-      totalSlots: int.parse(_slotsController.text),
-      features: List.from(_selectedFeatures),
-      description:
-          _descriptionController.text.trim().isEmpty
-              ? 'A comfortable $_typeLabel room.'
-              : _descriptionController.text.trim(),
-      isAvailable: _isAvailable,
+      totalSlots:
+          widget.type == RoomTypeEnum.singleSelfContained ? 1 : 2,
     );
 
     Navigator.pop(context, room);
@@ -87,8 +61,6 @@ class _AddRoomScreenState extends State<AddRoomScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final features = _defaultFeatures[widget.type]!;
-
     return Scaffold(
       backgroundColor: const Color(0xFFF8F9FE),
       appBar: AppBar(
@@ -105,7 +77,7 @@ class _AddRoomScreenState extends State<AddRoomScreen> {
           child: Container(
             margin: const EdgeInsets.all(8),
             decoration: BoxDecoration(
-              color: Colors.white.withOpacity(0.15),
+              color: Colors.white.withValues(alpha: 0.15),
               borderRadius: BorderRadius.circular(8),
             ),
             child: const Icon(Icons.arrow_back, color: Colors.white),
@@ -161,12 +133,52 @@ class _AddRoomScreenState extends State<AddRoomScreen> {
               const SizedBox(height: 24),
 
               _SectionLabel2(
-                  icon: Icons.payments_outlined,
-                  label: 'Pricing & Availability'),
+                  icon: Icons.bed_rounded, label: 'Capacity'),
+              const SizedBox(height: 10),
+
+              // Read-only capacity display (hardcoded by room type)
+              Container(
+                padding: const EdgeInsets.symmetric(
+                    horizontal: 16, vertical: 14),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: Colors.grey.shade200),
+                ),
+                child: Row(
+                  children: [
+                    Icon(Icons.people_outline,
+                        color: const Color(0xFF006B4F), size: 20),
+                    const SizedBox(width: 12),
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text('Accommodates',
+                            style: TextStyle(
+                                fontSize: 11, color: Colors.grey)),
+                        Text(
+                          widget.type ==
+                                  RoomTypeEnum.singleSelfContained
+                              ? '1 student per room'
+                              : '2 students per room',
+                          style: const TextStyle(
+                              fontWeight: FontWeight.w700,
+                              fontSize: 14,
+                              color: Color(0xFF0D1147)),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+
+              const SizedBox(height: 24),
+
+              _SectionLabel2(
+                  icon: Icons.payments_outlined, label: 'Pricing'),
               const SizedBox(height: 14),
 
-              // Price field
-              // API field: price (number, price per semester in UGX)
+              // Price field — API field: price (UGX per semester)
               TextFormField(
                 controller: _priceController,
                 keyboardType: TextInputType.number,
@@ -174,12 +186,16 @@ class _AddRoomScreenState extends State<AddRoomScreen> {
                   FilteringTextInputFormatter.digitsOnly
                 ],
                 validator: (v) {
-                  if (v == null || v.isEmpty) return 'Price is required';
+                  if (v == null || v.isEmpty) {
+                    return 'Price is required';
+                  }
                   final price = double.tryParse(v);
-                  if (price == null || price <= 0)
+                  if (price == null || price <= 0) {
                     return 'Enter a valid price';
-                  if (price < 50000)
+                  }
+                  if (price < 50000) {
                     return 'Minimum price is UGX 50,000';
+                  }
                   return null;
                 },
                 style: const TextStyle(
@@ -200,168 +216,6 @@ class _AddRoomScreenState extends State<AddRoomScreen> {
                     TextStyle(fontSize: 11.5, color: Colors.grey.shade400),
               ),
 
-              const SizedBox(height: 14),
-
-              // Capacity (API field: capacity)
-              TextFormField(
-                controller: _slotsController,
-                keyboardType: TextInputType.number,
-                inputFormatters: [
-                  FilteringTextInputFormatter.digitsOnly
-                ],
-                validator: (v) {
-                  if (v == null || v.isEmpty)
-                    return 'Number of rooms is required';
-                  final n = int.tryParse(v);
-                  if (n == null || n <= 0) return 'Enter a valid number';
-                  if (n > 50) return 'Maximum 50 rooms per type';
-                  return null;
-                },
-                style: const TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w500,
-                    color: Color(0xFF0D1147)),
-                decoration: _inputDeco(
-                  label: 'Number of Rooms (Capacity)',
-                  hint: 'e.g. 8',
-                  icon: Icons.meeting_room_outlined,
-                ),
-              ),
-
-              const SizedBox(height: 14),
-
-              // Available toggle (local UI only — API derives availability
-              // from occupiedSlots vs capacity)
-              Container(
-                padding: const EdgeInsets.symmetric(
-                    horizontal: 16, vertical: 12),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(14),
-                  border: Border.all(color: Colors.grey.shade200),
-                ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Row(
-                      children: [
-                        Icon(Icons.check_circle_outline,
-                            color: _isAvailable
-                                ? const Color(0xFF00C48C)
-                                : Colors.grey.shade400,
-                            size: 20),
-                        const SizedBox(width: 10),
-                        Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            const Text('Available for Booking',
-                                style: TextStyle(
-                                    fontWeight: FontWeight.w600,
-                                    fontSize: 14)),
-                            Text(
-                              _isAvailable
-                                  ? 'Students can book this room'
-                                  : 'Room is hidden from students',
-                              style: TextStyle(
-                                  fontSize: 11,
-                                  color: Colors.grey.shade500),
-                            ),
-                          ],
-                        ),
-                      ],
-                    ),
-                    Switch(
-                      value: _isAvailable,
-                      activeColor: const Color(0xFF006B4F),
-                      onChanged: (v) =>
-                          setState(() => _isAvailable = v),
-                    ),
-                  ],
-                ),
-              ),
-
-              const SizedBox(height: 24),
-
-              _SectionLabel2(
-                  icon: Icons.star_outline, label: 'Room Features'),
-              const SizedBox(height: 8),
-              Text('Select all features this room type includes:',
-                  style: TextStyle(
-                      fontSize: 12, color: Colors.grey.shade500)),
-              const SizedBox(height: 12),
-
-              // Feature chips (stored locally; not sent to API)
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: features.map((f) {
-                  final selected = _selectedFeatures.contains(f);
-                  return GestureDetector(
-                    onTap: () => setState(() {
-                      selected
-                          ? _selectedFeatures.remove(f)
-                          : _selectedFeatures.add(f);
-                    }),
-                    child: AnimatedContainer(
-                      duration: const Duration(milliseconds: 150),
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 12, vertical: 8),
-                      decoration: BoxDecoration(
-                        color: selected
-                            ? const Color(0xFF006B4F)
-                            : Colors.white,
-                        borderRadius: BorderRadius.circular(20),
-                        border: Border.all(
-                          color: selected
-                              ? const Color(0xFF006B4F)
-                              : Colors.grey.shade200,
-                        ),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          if (selected)
-                            const Padding(
-                              padding: EdgeInsets.only(right: 4),
-                              child: Icon(Icons.check,
-                                  color: Colors.white, size: 13),
-                            ),
-                          Text(f,
-                              style: TextStyle(
-                                fontSize: 12,
-                                color: selected
-                                    ? Colors.white
-                                    : Colors.grey.shade700,
-                                fontWeight: selected
-                                    ? FontWeight.w600
-                                    : FontWeight.w400,
-                              )),
-                        ],
-                      ),
-                    ),
-                  );
-                }).toList(),
-              ),
-
-              const SizedBox(height: 24),
-
-              _SectionLabel2(
-                  icon: Icons.description_outlined,
-                  label: 'Room Description (optional)'),
-              const SizedBox(height: 10),
-
-              TextFormField(
-                controller: _descriptionController,
-                maxLines: 3,
-                style: const TextStyle(fontSize: 14),
-                decoration: _inputDeco(
-                  label: 'Description',
-                  hint:
-                      'Any additional details about this room type...',
-                  icon: Icons.description_outlined,
-                ),
-              ),
-
               const SizedBox(height: 32),
 
               // Save button
@@ -378,7 +232,7 @@ class _AddRoomScreenState extends State<AddRoomScreen> {
                     boxShadow: [
                       BoxShadow(
                         color:
-                            const Color(0xFF006B4F).withOpacity(0.35),
+                            const Color(0xFF006B4F).withValues(alpha: 0.35),
                         blurRadius: 14,
                         offset: const Offset(0, 5),
                       ),

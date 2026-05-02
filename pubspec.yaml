@@ -40,6 +40,9 @@ dependencies:
   url_launcher: ^6.3.2
   dio: ^5.9.2
   clerk_flutter: ^0.0.14-beta
+  clerk_auth: ^0.0.14-beta
+  shared_preferences: ^2.4.1
+  image_picker: ^1.1.2
 
 dev_dependencies:
   flutter_test:
@@ -51,7 +54,15 @@ dev_dependencies:
   # package. See that file for information about deactivating specific lint
   # rules and activating additional ones.
   flutter_lints: ^5.0.0
-  shared_preferences: ^2.4.1
+  flutter_launcher_icons: ^0.14.4
+
+flutter_launcher_icons:
+  android: true
+  ios: false
+  image_path: assets/logo.png
+  adaptive_icon_foreground: assets/logo.png
+  adaptive_icon_monochrome: assets/logo.png
+  adaptive_icon_background: "#1A1F71"
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec
@@ -63,6 +74,9 @@ flutter:
   # included with your application, so that you can use the icons in
   # the material Icons class.
   uses-material-design: true
+
+  assets:
+    - assets/logo.png
 
   # To add assets to your application, add an assets section, like this:
   # assets:

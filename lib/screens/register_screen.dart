@@ -188,7 +188,7 @@ class _RegisterScreenState extends State<RegisterScreen>
         registrationNumber: _regNumberController.text.trim(),
         surname: _surnameController.text.trim(),
         otherNames: _otherNamesController.text.trim(),
-        gender: _selectedGender!,
+        gender: _selectedGender!.toLowerCase(),
         studentEmail: _emailController.text.trim(),
         password: _passwordController.text,
         universityId: _selectedUniversityId!,
@@ -290,7 +290,7 @@ class _RegisterScreenState extends State<RegisterScreen>
                 height: 150,
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
-                  color: Colors.white.withOpacity(0.06),
+                  color: Colors.white.withValues(alpha: 0.06),
                 ),
               ),
             ),
@@ -304,7 +304,7 @@ class _RegisterScreenState extends State<RegisterScreen>
                     child: Container(
                       padding: const EdgeInsets.all(8),
                       decoration: BoxDecoration(
-                        color: Colors.white.withOpacity(0.15),
+                        color: Colors.white.withValues(alpha: 0.15),
                         borderRadius: BorderRadius.circular(10),
                       ),
                       child: const Icon(Icons.arrow_back,
@@ -508,7 +508,7 @@ class _RegisterScreenState extends State<RegisterScreen>
                     boxShadow: isSelected
                         ? [
                             BoxShadow(
-                              color: const Color(0xFF1A1F71).withOpacity(0.25),
+                              color: const Color(0xFF1A1F71).withValues(alpha: 0.25),
                               blurRadius: 10,
                               offset: const Offset(0, 4),
                             )
@@ -580,15 +580,20 @@ class _RegisterScreenState extends State<RegisterScreen>
               fontWeight: FontWeight.w500,
             ),
             items: _universities.map((u) {
+              final id = (u['id'] ?? u['_id'])?.toString() ?? '';
+              final name = u['universityName']?.toString() ?? '';
               return DropdownMenuItem<String>(
-                value: u['id'].toString(),
-                child: Text(u['name'], overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 13)),
+                value: id,
+                child: Text(name, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 13)),
               );
             }).toList(),
             onChanged: (v) {
               setState(() {
                 _selectedUniversityId = v;
-                _selectedUniversity = _universities.firstWhere((u) => u['id'].toString() == v)['name'];
+                _selectedUniversity = _universities.firstWhere(
+                  (u) => (u['id'] ?? u['_id'])?.toString() == v,
+                  orElse: () => {'universityName': ''},
+                )['universityName']?.toString() ?? '';
               });
             },
             validator: (v) => v == null ? 'Please select your university' : null,
@@ -833,7 +838,7 @@ class _RegisterScreenState extends State<RegisterScreen>
         children: [
           CircleAvatar(
             radius: 28,
-            backgroundColor: Colors.white.withOpacity(0.2),
+            backgroundColor: Colors.white.withValues(alpha: 0.2),
             child: Text(
               initials,
               style: const TextStyle(
@@ -862,13 +867,13 @@ class _RegisterScreenState extends State<RegisterScreen>
                       ? 'Reg. Number'
                       : _regNumberController.text,
                   style: TextStyle(
-                      color: Colors.white.withOpacity(0.7), fontSize: 12),
+                      color: Colors.white.withValues(alpha: 0.7), fontSize: 12),
                 ),
                 const SizedBox(height: 3),
                 Text(
                   _selectedUniversity ?? 'University not selected',
                   style: TextStyle(
-                      color: Colors.white.withOpacity(0.7), fontSize: 11),
+                      color: Colors.white.withValues(alpha: 0.7), fontSize: 11),
                   overflow: TextOverflow.ellipsis,
                 ),
               ],
@@ -879,7 +884,7 @@ class _RegisterScreenState extends State<RegisterScreen>
               padding:
                   const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
               decoration: BoxDecoration(
-                color: Colors.white.withOpacity(0.15),
+                color: Colors.white.withValues(alpha: 0.15),
                 borderRadius: BorderRadius.circular(20),
               ),
               child: Text(
@@ -943,7 +948,7 @@ class _RegisterScreenState extends State<RegisterScreen>
         color: Colors.white,
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.06),
+            color: Colors.black.withValues(alpha: 0.06),
             blurRadius: 16,
             offset: const Offset(0, -4),
           ),
@@ -991,7 +996,7 @@ class _RegisterScreenState extends State<RegisterScreen>
                   borderRadius: BorderRadius.circular(14),
                   boxShadow: [
                     BoxShadow(
-                      color: const Color(0xFF1A1F71).withOpacity(0.35),
+                      color: const Color(0xFF1A1F71).withValues(alpha: 0.35),
                       blurRadius: 14,
                       offset: const Offset(0, 5),
                     ),

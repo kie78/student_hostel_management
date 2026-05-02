@@ -115,10 +115,14 @@ class _BookingSuccessScreenState extends State<BookingSuccessScreen>
     return 'UGX ${price.toStringAsFixed(0)}';
   }
 
-  String _formatDate(DateTime date) {
-    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-    return '${date.day} ${months[date.month - 1]} ${date.year}';
-  }
+  String _paymentMethodLabel(String method) => switch (method) {
+        'mtn_mobile_money' => 'MTN Mobile Money',
+        'airtel_mobile_money' => 'Airtel Money',
+        _ => 'Mobile Money',
+      };
+
+  String _capitalize(String s) =>
+      s.isEmpty ? s : '${s[0].toUpperCase()}${s.substring(1)}';
 
   @override
   Widget build(BuildContext context) {
@@ -169,7 +173,7 @@ class _BookingSuccessScreenState extends State<BookingSuccessScreen>
                             shape: BoxShape.circle,
                             boxShadow: [
                               BoxShadow(
-                                color: const Color(0xFF00C48C).withOpacity(0.4),
+                                color: const Color(0xFF00C48C).withValues(alpha: 0.4),
                                 blurRadius: 24,
                                 spreadRadius: 4,
                               ),
@@ -307,7 +311,7 @@ class _BookingSuccessScreenState extends State<BookingSuccessScreen>
                               borderRadius: BorderRadius.circular(14),
                               boxShadow: [
                                 BoxShadow(
-                                  color: const Color(0xFF1A1F71).withOpacity(0.35),
+                                  color: const Color(0xFF1A1F71).withValues(alpha: 0.35),
                                   blurRadius: 12,
                                   offset: const Offset(0, 4),
                                 ),
@@ -339,7 +343,7 @@ class _BookingSuccessScreenState extends State<BookingSuccessScreen>
                             decoration: BoxDecoration(
                               color: Colors.white,
                               borderRadius: BorderRadius.circular(14),
-                              border: Border.all(color: const Color(0xFF1A1F71).withOpacity(0.2)),
+                              border: Border.all(color: const Color(0xFF1A1F71).withValues(alpha: 0.2)),
                             ),
                             child: const Center(
                               child: Text(
@@ -395,7 +399,7 @@ class _BookingSuccessScreenState extends State<BookingSuccessScreen>
         color: Colors.white,
         borderRadius: BorderRadius.circular(20),
         boxShadow: [
-          BoxShadow(color: Colors.black.withOpacity(0.06), blurRadius: 20, offset: const Offset(0, 4)),
+          BoxShadow(color: Colors.black.withValues(alpha: 0.06), blurRadius: 20, offset: const Offset(0, 4)),
         ],
       ),
       child: Column(
@@ -423,11 +427,11 @@ class _BookingSuccessScreenState extends State<BookingSuccessScreen>
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        widget.booking.hostel.name,
+                        widget.booking.hostelName,
                         style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14, color: Color(0xFF1A1F71)),
                       ),
                       Text(
-                        widget.booking.roomType.name,
+                        widget.booking.roomTypeName,
                         style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
                       ),
                     ],
@@ -440,7 +444,7 @@ class _BookingSuccessScreenState extends State<BookingSuccessScreen>
                     borderRadius: BorderRadius.circular(20),
                   ),
                   child: Text(
-                    widget.booking.status.name.toUpperCase(),
+                    widget.booking.status.toUpperCase(),
                     style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.w700),
                   ),
                 ),
@@ -467,35 +471,27 @@ class _BookingSuccessScreenState extends State<BookingSuccessScreen>
             child: Column(
               children: [
                 _DetailRow(
-                  icon: Icons.person,
-                  label: 'Booked By',
-                  value: widget.booking.studentName,
+                  icon: Icons.location_on,
+                  label: 'Location',
+                  value: widget.booking.hostelLocation,
                 ),
                 _DetailRow(
-                  icon: Icons.badge,
-                  label: 'Student ID',
-                  value: widget.booking.studentId,
+                  icon: Icons.hotel,
+                  label: 'Room Type',
+                  value: widget.booking.roomTypeName,
                 ),
-                _DetailRow(
-                  icon: Icons.phone,
-                  label: 'Phone',
-                  value: widget.booking.phoneNumber,
-                ),
-                _DetailRow(
-                  icon: Icons.calendar_today,
-                  label: 'Move-in Date',
-                  value: _formatDate(widget.booking.moveInDate),
-                ),
-                _DetailRow(
-                  icon: Icons.date_range,
-                  label: 'Duration',
-                  value: '${widget.booking.durationMonths} months',
-                ),
-                _DetailRow(
-                  icon: Icons.payment,
-                  label: 'Payment Method',
-                  value: widget.booking.paymentMethod,
-                ),
+                if (widget.booking.paymentMethod != null)
+                  _DetailRow(
+                    icon: Icons.payment,
+                    label: 'Payment Method',
+                    value: _paymentMethodLabel(widget.booking.paymentMethod!),
+                  ),
+                if (widget.booking.paymentType != null)
+                  _DetailRow(
+                    icon: Icons.receipt,
+                    label: 'Payment Type',
+                    value: _capitalize(widget.booking.paymentType!),
+                  ),
               ],
             ),
           ),
@@ -506,7 +502,7 @@ class _BookingSuccessScreenState extends State<BookingSuccessScreen>
             decoration: BoxDecoration(
               color: const Color(0xFFFFF8E1),
               borderRadius: const BorderRadius.vertical(bottom: Radius.circular(20)),
-              border: Border.all(color: const Color(0xFFFFC107).withOpacity(0.3)),
+              border: Border.all(color: const Color(0xFFFFC107).withValues(alpha: 0.3)),
             ),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -515,20 +511,16 @@ class _BookingSuccessScreenState extends State<BookingSuccessScreen>
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     const Text(
-                      'Amount Due Now',
+                      'Amount Paid',
                       style: TextStyle(fontSize: 12, color: Colors.grey),
                     ),
                     Text(
-                      _formatPrice(widget.booking.depositAmount + widget.booking.roomType.pricePerMonth),
+                      _formatPrice(widget.booking.amountPaid ?? widget.booking.roomPrice),
                       style: const TextStyle(
                         fontSize: 22,
                         fontWeight: FontWeight.w900,
                         color: Color(0xFF1A1F71),
                       ),
-                    ),
-                    Text(
-                      'Includes ${_formatPrice(widget.booking.depositAmount)} refundable deposit',
-                      style: const TextStyle(fontSize: 11, color: Colors.grey),
                     ),
                   ],
                 ),
@@ -551,21 +543,21 @@ class _BookingSuccessScreenState extends State<BookingSuccessScreen>
   Widget _buildNextSteps() {
     final steps = [
       {
-        'icon': Icons.phone,
-        'title': 'Wait for a Call',
-        'desc': 'The hostel management will call you within 24 hours to confirm your booking.',
+        'icon': Icons.check_circle_outline,
+        'title': 'Booking Confirmed',
+        'desc': 'Your booking is confirmed and the landlord has been notified.',
         'color': const Color(0xFF4FC3F7),
       },
       {
         'icon': Icons.payments,
-        'title': 'Make Payment',
-        'desc': 'Pay your deposit via ${widget.booking.paymentMethod} to secure the room.',
+        'title': 'Payment Processed',
+        'desc': 'Your payment via ${_paymentMethodLabel(widget.booking.paymentMethod ?? '')} has been processed successfully.',
         'color': const Color(0xFF00C48C),
       },
       {
         'icon': Icons.vpn_key,
         'title': 'Move In',
-        'desc': 'Collect your keys on ${_formatDate(widget.booking.moveInDate)} from the hostel office.',
+        'desc': 'Contact the hostel management on WhatsApp to arrange your move-in date.',
         'color': const Color(0xFFFFC107),
       },
     ];
@@ -592,9 +584,9 @@ class _BookingSuccessScreenState extends State<BookingSuccessScreen>
                       width: 38,
                       height: 38,
                       decoration: BoxDecoration(
-                        color: (step['color'] as Color).withOpacity(0.12),
+                        color: (step['color'] as Color).withValues(alpha: 0.12),
                         shape: BoxShape.circle,
-                        border: Border.all(color: (step['color'] as Color).withOpacity(0.3)),
+                        border: Border.all(color: (step['color'] as Color).withValues(alpha: 0.3)),
                       ),
                       child: Center(
                         child: Icon(step['icon'] as IconData, color: step['color'] as Color, size: 18),
@@ -649,7 +641,7 @@ class _DetailRow extends StatelessWidget {
       padding: const EdgeInsets.symmetric(vertical: 6),
       child: Row(
         children: [
-          Icon(icon, size: 16, color: const Color(0xFF1A1F71).withOpacity(0.6)),
+          Icon(icon, size: 16, color: const Color(0xFF1A1F71).withValues(alpha: 0.6)),
           const SizedBox(width: 8),
           Text(label, style: TextStyle(fontSize: 13, color: Colors.grey.shade500)),
           const Spacer(),
@@ -700,7 +692,7 @@ class _ConfettiPainter extends CustomPainter {
       final opacity = (1 - adjustedProgress * 0.8).clamp(0.0, 1.0);
 
       final paint = Paint()
-        ..color = p.color.withOpacity(opacity)
+        ..color = p.color.withValues(alpha: opacity)
         ..style = PaintingStyle.fill;
 
       canvas.save();

@@ -21,46 +21,10 @@ class _RoomDetailsScreenState extends State<RoomDetailsScreen>
   final ScrollController _scrollController = ScrollController();
   bool _isAppBarCollapsed = false;
 
-  // Fake review data
-  final List<Map<String, dynamic>> _reviews = [
-    {
-      'name': 'Amara Nakato',
-      'avatar': 'AN',
-      'rating': 5,
-      'date': '2 weeks ago',
-      'comment': 'Absolutely love it here! The WiFi is super fast and the management is very responsive. Highly recommend to any student.',
-      'roomType': 'Single Self-Contained',
-    },
-    {
-      'name': 'David Ochieng',
-      'avatar': 'DO',
-      'rating': 4,
-      'date': '1 month ago',
-      'comment': 'Great location, very close to campus. Water supply is reliable. Would be 5 stars if they had a gym.',
-      'roomType': 'Double Room',
-    },
-    {
-      'name': 'Faith Nabirye',
-      'avatar': 'FN',
-      'rating': 5,
-      'date': '2 months ago',
-      'comment': 'Security here is top notch. I feel very safe even when coming back late from the library. The rooms are clean and spacious.',
-      'roomType': 'Single Self-Contained',
-    },
-    {
-      'name': 'Samuel Kato',
-      'avatar': 'SK',
-      'rating': 4,
-      'date': '3 months ago',
-      'comment': 'Good value for the price. Management is helpful. The common area could use better maintenance though.',
-      'roomType': 'Triple Room',
-    },
-  ];
-
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 3, vsync: this);
+    _tabController = TabController(length: 1, vsync: this);
     _scrollController.addListener(() {
       final collapsed = _scrollController.offset > 200;
       if (collapsed != _isAppBarCollapsed) {
@@ -84,13 +48,9 @@ class _RoomDetailsScreenState extends State<RoomDetailsScreen>
     return 'UGX ${price.toStringAsFixed(0)}';
   }
 
-  // Placeholder images per hostel
-  List<String> get _hostelImages => [
-    widget.hostel.imageUrl,
-    'https://images.unsplash.com/photo-1522708323590-d24dbb6b0267?w=800',
-    'https://images.unsplash.com/photo-1505693314120-0d443867891c?w=800',
-    'https://images.unsplash.com/photo-1540518614846-7eded433c457?w=800',
-  ];
+  // Use actual hostel images from the API (Cloudinary URLs)
+  List<String> get _hostelImages =>
+      widget.hostel.images.isNotEmpty ? widget.hostel.images : [''];
 
   @override
   Widget build(BuildContext context) {
@@ -113,7 +73,7 @@ class _RoomDetailsScreenState extends State<RoomDetailsScreen>
                   child: Container(
                     margin: const EdgeInsets.all(8),
                     decoration: BoxDecoration(
-                      color: Colors.black.withOpacity(0.4),
+                      color: Colors.black.withValues(alpha: 0.4),
                       shape: BoxShape.circle,
                     ),
                     child: const Icon(Icons.arrow_back, color: Colors.white),
@@ -125,7 +85,7 @@ class _RoomDetailsScreenState extends State<RoomDetailsScreen>
                     child: Container(
                       margin: const EdgeInsets.all(8),
                       decoration: BoxDecoration(
-                        color: Colors.black.withOpacity(0.4),
+                        color: Colors.black.withValues(alpha: 0.4),
                         shape: BoxShape.circle,
                       ),
                       child: Padding(
@@ -147,7 +107,7 @@ class _RoomDetailsScreenState extends State<RoomDetailsScreen>
                     child: Container(
                       margin: const EdgeInsets.fromLTRB(0, 8, 12, 8),
                       decoration: BoxDecoration(
-                        color: Colors.black.withOpacity(0.4),
+                        color: Colors.black.withValues(alpha: 0.4),
                         shape: BoxShape.circle,
                       ),
                       child: const Padding(
@@ -204,7 +164,7 @@ class _RoomDetailsScreenState extends State<RoomDetailsScreen>
                               decoration: BoxDecoration(
                                 color: _imageIndex == i
                                     ? Colors.white
-                                    : Colors.white.withOpacity(0.5),
+                                    : Colors.white.withValues(alpha: 0.5),
                                 borderRadius: BorderRadius.circular(3),
                               ),
                             ),
@@ -218,7 +178,7 @@ class _RoomDetailsScreenState extends State<RoomDetailsScreen>
                         child: Container(
                           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                           decoration: BoxDecoration(
-                            color: Colors.black.withOpacity(0.6),
+                            color: Colors.black.withValues(alpha: 0.6),
                             borderRadius: BorderRadius.circular(12),
                           ),
                           child: Text(
@@ -251,24 +211,6 @@ class _RoomDetailsScreenState extends State<RoomDetailsScreen>
                                 child: Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
-                                    if (widget.hostel.isVerified)
-                                      Container(
-                                        margin: const EdgeInsets.only(bottom: 8),
-                                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                                        decoration: BoxDecoration(
-                                          color: const Color(0xFF00C48C).withOpacity(0.12),
-                                          borderRadius: BorderRadius.circular(20),
-                                          border: Border.all(color: const Color(0xFF00C48C).withOpacity(0.4)),
-                                        ),
-                                        child: const Row(
-                                          mainAxisSize: MainAxisSize.min,
-                                          children: [
-                                            Icon(Icons.verified, color: Color(0xFF00C48C), size: 13),
-                                            SizedBox(width: 4),
-                                            Text('Verified Hostel', style: TextStyle(color: Color(0xFF00C48C), fontSize: 12, fontWeight: FontWeight.w600)),
-                                          ],
-                                        ),
-                                      ),
                                     Text(
                                       widget.hostel.name,
                                       style: const TextStyle(
@@ -284,7 +226,7 @@ class _RoomDetailsScreenState extends State<RoomDetailsScreen>
                                         const Icon(Icons.location_on, size: 15, color: Colors.grey),
                                         const SizedBox(width: 4),
                                         Text(
-                                          '${widget.hostel.location}, ${widget.hostel.district}',
+                                          widget.hostel.location,
                                           style: TextStyle(fontSize: 14, color: Colors.grey.shade600),
                                         ),
                                       ],
@@ -292,37 +234,7 @@ class _RoomDetailsScreenState extends State<RoomDetailsScreen>
                                   ],
                                 ),
                               ),
-                              Column(
-                                crossAxisAlignment: CrossAxisAlignment.end,
-                                children: [
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                                    decoration: BoxDecoration(
-                                      color: const Color(0xFFFFF8E1),
-                                      borderRadius: BorderRadius.circular(12),
-                                    ),
-                                    child: Row(
-                                      children: [
-                                        const Icon(Icons.star, color: Color(0xFFFFC107), size: 18),
-                                        const SizedBox(width: 4),
-                                        Text(
-                                          widget.hostel.rating.toStringAsFixed(1),
-                                          style: const TextStyle(
-                                            fontWeight: FontWeight.w800,
-                                            fontSize: 16,
-                                            color: Color(0xFF1A1F71),
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                  const SizedBox(height: 4),
-                                  Text(
-                                    '${widget.hostel.reviews} reviews',
-                                    style: TextStyle(fontSize: 12, color: Colors.grey.shade500),
-                                  ),
-                                ],
-                              ),
+
                             ],
                           ),
 
@@ -331,12 +243,6 @@ class _RoomDetailsScreenState extends State<RoomDetailsScreen>
                           // Quick stats row
                           Row(
                             children: [
-                              _StatChip(
-                                icon: Icons.school,
-                                label: widget.hostel.distanceFromCampus,
-                                sublabel: 'from campus',
-                              ),
-                              const SizedBox(width: 12),
                               _StatChip(
                                 icon: Icons.door_front_door,
                                 label: '${widget.hostel.availableRooms}',
@@ -368,8 +274,6 @@ class _RoomDetailsScreenState extends State<RoomDetailsScreen>
                         indicatorWeight: 3,
                         tabs: const [
                           Tab(text: 'Rooms'),
-                          Tab(text: 'Amenities'),
-                          Tab(text: 'Reviews'),
                         ],
                         onTap: (i) => setState(() {}),
                       ),
@@ -378,11 +282,7 @@ class _RoomDetailsScreenState extends State<RoomDetailsScreen>
                     const SizedBox(height: 8),
 
                     // Tab Content
-                    [
-                      _buildRoomsTab(),
-                      _buildAmenitiesTab(),
-                      _buildReviewsTab(),
-                    ][_tabController.index],
+                    _buildRoomsTab(),
 
                     const SizedBox(height: 100),
                   ],
@@ -460,8 +360,8 @@ class _RoomDetailsScreenState extends State<RoomDetailsScreen>
                   boxShadow: [
                     BoxShadow(
                       color: isSelected
-                          ? const Color(0xFF1A1F71).withOpacity(0.12)
-                          : Colors.black.withOpacity(0.04),
+                          ? const Color(0xFF1A1F71).withValues(alpha: 0.12)
+                          : Colors.black.withValues(alpha: 0.04),
                       blurRadius: 12,
                       offset: const Offset(0, 4),
                     ),
@@ -515,35 +415,14 @@ class _RoomDetailsScreenState extends State<RoomDetailsScreen>
                                 ),
                             ],
                           ),
-                          const SizedBox(height: 10),
-                          Text(
-                            room.description,
-                            style: TextStyle(fontSize: 13, color: Colors.grey.shade600, height: 1.5),
-                          ),
                           const SizedBox(height: 12),
                           Row(
                             children: [
-                              _RoomInfoBadge(icon: Icons.straighten, label: room.size),
-                              const SizedBox(width: 8),
                               _RoomInfoBadge(icon: Icons.people, label: '${room.maxOccupants} person'),
                               const SizedBox(width: 8),
                               if (room.hasEnsuite)
                                 _RoomInfoBadge(icon: Icons.shower, label: 'Ensuite'),
                             ],
-                          ),
-                          const SizedBox(height: 12),
-                          // Features
-                          Wrap(
-                            spacing: 6,
-                            runSpacing: 6,
-                            children: room.features.map((f) => Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                              decoration: BoxDecoration(
-                                color: const Color(0xFFEEF0F8),
-                                borderRadius: BorderRadius.circular(20),
-                              ),
-                              child: Text(f, style: const TextStyle(fontSize: 11, color: Color(0xFF2D3561))),
-                            )).toList(),
                           ),
                           const SizedBox(height: 12),
                           Row(
@@ -553,7 +432,7 @@ class _RoomDetailsScreenState extends State<RoomDetailsScreen>
                                 text: TextSpan(
                                   children: [
                                     TextSpan(
-                                      text: _formatPrice(room.pricePerMonth),
+                                      text: _formatPrice(room.pricePerSemester),
                                       style: const TextStyle(
                                         fontSize: 20,
                                         fontWeight: FontWeight.w800,
@@ -561,7 +440,7 @@ class _RoomDetailsScreenState extends State<RoomDetailsScreen>
                                       ),
                                     ),
                                     const TextSpan(
-                                      text: ' /month',
+                                      text: ' /sem',
                                       style: TextStyle(fontSize: 13, color: Colors.grey),
                                     ),
                                   ],
@@ -591,303 +470,6 @@ class _RoomDetailsScreenState extends State<RoomDetailsScreen>
     );
   }
 
-  Widget _buildAmenitiesTab() {
-    final amenityDetails = {
-      'WiFi': {'icon': Icons.wifi, 'desc': 'High-speed fiber internet'},
-      'Security': {'icon': Icons.security, 'desc': '24/7 CCTV and guards'},
-      'Water': {'icon': Icons.water_drop, 'desc': 'Running water all day'},
-      'Kitchen': {'icon': Icons.kitchen, 'desc': 'Shared cooking facility'},
-      'Laundry': {'icon': Icons.local_laundry_service, 'desc': 'Washing machines available'},
-      'Gym': {'icon': Icons.fitness_center, 'desc': 'Fully equipped gym'},
-      'Study Room': {'icon': Icons.menu_book, 'desc': 'Quiet study space'},
-      'Parking': {'icon': Icons.local_parking, 'desc': 'Secure parking available'},
-      'Swimming Pool': {'icon': Icons.pool, 'desc': 'Outdoor pool'},
-      'Cafeteria': {'icon': Icons.restaurant, 'desc': 'On-site dining'},
-      'Common Room': {'icon': Icons.weekend, 'desc': 'Shared lounge area'},
-    };
-
-    final hostelPolicies = [
-      {'icon': Icons.access_time, 'title': 'Gate Closing Time', 'value': '11:00 PM'},
-      {'icon': Icons.no_drinks, 'title': 'Alcohol Policy', 'value': 'Not allowed'},
-      {'icon': Icons.pets, 'title': 'Pets', 'value': 'Not allowed'},
-      {'icon': Icons.people_outline, 'title': 'Visitors', 'value': 'Allowed until 9 PM'},
-      {'icon': Icons.smoke_free, 'title': 'Smoking', 'value': 'Outdoor only'},
-    ];
-
-    return Padding(
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const SizedBox(height: 8),
-          const Text('Facilities & Amenities',
-              style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: Color(0xFF1A1F71))),
-          const SizedBox(height: 12),
-          Container(
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(16),
-            ),
-            child: Column(
-              children: widget.hostel.amenities.asMap().entries.map((entry) {
-                final i = entry.key;
-                final amenity = entry.value;
-                final details = amenityDetails[amenity];
-                return Column(
-                  children: [
-                    ListTile(
-                      leading: Container(
-                        padding: const EdgeInsets.all(8),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFEEF0F8),
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                        child: Icon(
-                          details?['icon'] as IconData? ?? Icons.check_circle_outline,
-                          color: const Color(0xFF1A1F71),
-                          size: 20,
-                        ),
-                      ),
-                      title: Text(amenity, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
-                      subtitle: Text(
-                        details?['desc'] as String? ?? '',
-                        style: TextStyle(fontSize: 12, color: Colors.grey.shade500),
-                      ),
-                      trailing: const Icon(Icons.check, color: Color(0xFF00C48C), size: 18),
-                    ),
-                    if (i < widget.hostel.amenities.length - 1)
-                      const Divider(height: 1, indent: 60),
-                  ],
-                );
-              }).toList(),
-            ),
-          ),
-
-          const SizedBox(height: 20),
-          const Text('Hostel Rules & Policies',
-              style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: Color(0xFF1A1F71))),
-          const SizedBox(height: 12),
-          Container(
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(16),
-            ),
-            child: Column(
-              children: hostelPolicies.asMap().entries.map((entry) {
-                final i = entry.key;
-                final policy = entry.value;
-                return Column(
-                  children: [
-                    ListTile(
-                      leading: Icon(policy['icon'] as IconData, color: const Color(0xFF1A1F71), size: 22),
-                      title: Text(policy['title'] as String,
-                          style: const TextStyle(fontWeight: FontWeight.w500, fontSize: 14)),
-                      trailing: Text(
-                        policy['value'] as String,
-                        style: TextStyle(
-                          fontSize: 13,
-                          color: Colors.grey.shade600,
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                    ),
-                    if (i < hostelPolicies.length - 1)
-                      const Divider(height: 1, indent: 16),
-                  ],
-                );
-              }).toList(),
-            ),
-          ),
-
-          const SizedBox(height: 20),
-
-          // Location map placeholder
-          Container(
-            height: 160,
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: Colors.grey.shade200),
-            ),
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(16),
-              child: Stack(
-                children: [
-                  Container(
-                    color: const Color(0xFFEEF0F8),
-                    child: const Center(
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(Icons.map, size: 48, color: Color(0xFF1A1F71)),
-                          SizedBox(height: 8),
-                          Text('Map View', style: TextStyle(color: Color(0xFF1A1F71), fontWeight: FontWeight.w600)),
-                          Text('Tap to open in Maps', style: TextStyle(color: Colors.grey, fontSize: 12)),
-                        ],
-                      ),
-                    ),
-                  ),
-                  Positioned(
-                    top: 12,
-                    left: 12,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(8),
-                        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.1), blurRadius: 4)],
-                      ),
-                      child: Text(widget.hostel.location,
-                          style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Color(0xFF1A1F71))),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildReviewsTab() {
-    final avgRating = widget.hostel.rating;
-    return Padding(
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Rating Summary
-          Container(
-            padding: const EdgeInsets.all(20),
-            decoration: BoxDecoration(
-              gradient: const LinearGradient(
-                colors: [Color(0xFF1A1F71), Color(0xFF2D3561)],
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-              ),
-              borderRadius: BorderRadius.circular(16),
-            ),
-            child: Row(
-              children: [
-                Column(
-                  children: [
-                    Text(
-                      avgRating.toStringAsFixed(1),
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 48,
-                        fontWeight: FontWeight.w900,
-                      ),
-                    ),
-                    Row(
-                      children: List.generate(5, (i) => Icon(
-                        i < avgRating.floor() ? Icons.star : Icons.star_border,
-                        color: const Color(0xFFFFC107),
-                        size: 16,
-                      )),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      '${widget.hostel.reviews} reviews',
-                      style: const TextStyle(color: Colors.white70, fontSize: 12),
-                    ),
-                  ],
-                ),
-                const SizedBox(width: 24),
-                Expanded(
-                  child: Column(
-                    children: [5, 4, 3, 2, 1].map((star) {
-                      // Fake distribution
-                      final fractions = [0.68, 0.22, 0.07, 0.02, 0.01];
-                      final fraction = fractions[5 - star];
-                      return Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 2),
-                        child: Row(
-                          children: [
-                            Text('$star', style: const TextStyle(color: Colors.white70, fontSize: 11)),
-                            const SizedBox(width: 4),
-                            Expanded(
-                              child: ClipRRect(
-                                borderRadius: BorderRadius.circular(4),
-                                child: LinearProgressIndicator(
-                                  value: fraction,
-                                  backgroundColor: Colors.white.withOpacity(0.2),
-                                  valueColor: const AlwaysStoppedAnimation<Color>(Color(0xFFFFC107)),
-                                  minHeight: 6,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      );
-                    }).toList(),
-                  ),
-                ),
-              ],
-            ),
-          ),
-
-          const SizedBox(height: 16),
-          const Text('Recent Reviews',
-              style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: Color(0xFF1A1F71))),
-          const SizedBox(height: 12),
-
-          ..._reviews.map((r) => Container(
-            margin: const EdgeInsets.only(bottom: 12),
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(16),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    CircleAvatar(
-                      radius: 20,
-                      backgroundColor: const Color(0xFF1A1F71),
-                      child: Text(
-                        r['avatar'] as String,
-                        style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 12),
-                      ),
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(r['name'] as String,
-                              style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14)),
-                          Text(
-                            '${r['roomType']} • ${r['date']}',
-                            style: TextStyle(fontSize: 12, color: Colors.grey.shade500),
-                          ),
-                        ],
-                      ),
-                    ),
-                    Row(
-                      children: List.generate(
-                        (r['rating'] as int),
-                        (_) => const Icon(Icons.star, color: Color(0xFFFFC107), size: 14),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 10),
-                Text(
-                  r['comment'] as String,
-                  style: TextStyle(fontSize: 13.5, color: Colors.grey.shade700, height: 1.5),
-                ),
-              ],
-            ),
-          )),
-        ],
-      ),
-    );
-  }
-
   Widget _buildBottomBar() {
     return Container(
       padding: const EdgeInsets.fromLTRB(20, 16, 20, 30),
@@ -895,7 +477,7 @@ class _RoomDetailsScreenState extends State<RoomDetailsScreen>
         color: Colors.white,
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.08),
+            color: Colors.black.withValues(alpha: 0.08),
             blurRadius: 20,
             offset: const Offset(0, -4),
           ),
@@ -908,7 +490,7 @@ class _RoomDetailsScreenState extends State<RoomDetailsScreen>
             mainAxisSize: MainAxisSize.min,
             children: [
               Text(
-                _formatPrice(_selectedRoom.pricePerMonth),
+                _formatPrice(_selectedRoom.pricePerSemester),
                 style: const TextStyle(
                   fontSize: 22,
                   fontWeight: FontWeight.w900,
@@ -916,7 +498,7 @@ class _RoomDetailsScreenState extends State<RoomDetailsScreen>
                 ),
               ),
               Text(
-                'per month · ${_selectedRoom.name}',
+                'per semester · ${_selectedRoom.name}',
                 style: TextStyle(fontSize: 12, color: Colors.grey.shade500),
               ),
             ],
@@ -947,7 +529,7 @@ class _RoomDetailsScreenState extends State<RoomDetailsScreen>
                   borderRadius: BorderRadius.circular(14),
                   boxShadow: _selectedRoom.isAvailable
                       ? [BoxShadow(
-                          color: const Color(0xFF1A1F71).withOpacity(0.4),
+                          color: const Color(0xFF1A1F71).withValues(alpha: 0.4),
                           blurRadius: 12,
                           offset: const Offset(0, 4),
                         )]

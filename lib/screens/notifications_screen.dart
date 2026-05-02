@@ -71,7 +71,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                               padding: const EdgeInsets.symmetric(
                                   horizontal: 12, vertical: 8),
                               decoration: BoxDecoration(
-                                color: Colors.white.withOpacity(0.15),
+                                color: Colors.white.withValues(alpha: 0.15),
                                 borderRadius: BorderRadius.circular(10),
                               ),
                               child: const Text('Mark all read',
@@ -173,11 +173,11 @@ class _NotificationCard extends StatelessWidget {
           border: Border.all(
             color: notification.isRead
                 ? Colors.grey.shade100
-                : const Color(0xFF006B4F).withOpacity(0.2),
+                : const Color(0xFF006B4F).withValues(alpha: 0.2),
           ),
           boxShadow: [
             BoxShadow(
-                color: Colors.black.withOpacity(0.03),
+                color: Colors.black.withValues(alpha: 0.03),
                 blurRadius: 6,
                 offset: const Offset(0, 2)),
           ],
@@ -188,7 +188,7 @@ class _NotificationCard extends StatelessWidget {
             Container(
               padding: const EdgeInsets.all(10),
               decoration: BoxDecoration(
-                color: _typeColor.withOpacity(0.1),
+                color: _typeColor.withValues(alpha: 0.1),
                 borderRadius: BorderRadius.circular(12),
               ),
               child: Icon(_typeIcon, color: _typeColor, size: 20),
@@ -226,7 +226,7 @@ class _NotificationCard extends StatelessWidget {
                     padding: const EdgeInsets.symmetric(
                         horizontal: 8, vertical: 3),
                     decoration: BoxDecoration(
-                      color: _typeColor.withOpacity(0.08),
+                      color: _typeColor.withValues(alpha: 0.08),
                       borderRadius: BorderRadius.circular(20),
                     ),
                     child: Text(

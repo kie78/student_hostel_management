@@ -14,7 +14,6 @@ class RegisterLandlordScreen extends StatefulWidget {
 
 class _RegisterLandlordScreenState extends State<RegisterLandlordScreen>
     with TickerProviderStateMixin {
-  final _formKey = GlobalKey<FormState>();
   final _scrollController = ScrollController();
 
   // Step control
@@ -98,7 +97,7 @@ class _RegisterLandlordScreenState extends State<RegisterLandlordScreen>
   String _generateTempPassword() {
     const name = 'Landlord';
     final year = DateTime.now().year;
-    return '${name}${year}!@Unistay';
+    return '$name$year!@Unistay';
   }
 
   void _animateStep() {
@@ -302,7 +301,7 @@ class _RegisterLandlordScreenState extends State<RegisterLandlordScreen>
                 height: 130,
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
-                  color: Colors.white.withOpacity(0.06),
+                  color: Colors.white.withValues(alpha: 0.06),
                 ),
               ),
             ),
@@ -316,7 +315,7 @@ class _RegisterLandlordScreenState extends State<RegisterLandlordScreen>
                     child: Container(
                       padding: const EdgeInsets.all(8),
                       decoration: BoxDecoration(
-                        color: Colors.white.withOpacity(0.15),
+                        color: Colors.white.withValues(alpha: 0.15),
                         borderRadius: BorderRadius.circular(10),
                       ),
                       child: const Icon(Icons.arrow_back,
@@ -699,7 +698,7 @@ class _RegisterLandlordScreenState extends State<RegisterLandlordScreen>
                             padding: const EdgeInsets.all(8),
                             decoration: BoxDecoration(
                               color: isChecked
-                                  ? const Color(0xFF7B2FF7).withOpacity(0.1)
+                                  ? const Color(0xFF7B2FF7).withValues(alpha: 0.1)
                                   : Colors.grey.shade100,
                               borderRadius: BorderRadius.circular(8),
                             ),
@@ -769,7 +768,7 @@ class _RegisterLandlordScreenState extends State<RegisterLandlordScreen>
             border: Border.all(
               color: _documents.isEmpty
                   ? Colors.red.shade200
-                  : const Color(0xFF00C48C).withOpacity(0.3),
+                  : const Color(0xFF00C48C).withValues(alpha: 0.3),
             ),
           ),
           child: Row(
@@ -808,7 +807,7 @@ class _RegisterLandlordScreenState extends State<RegisterLandlordScreen>
             color: const Color(0xFFF3EEFF),
             borderRadius: BorderRadius.circular(12),
             border:
-                Border.all(color: const Color(0xFF7B2FF7).withOpacity(0.2)),
+                Border.all(color: const Color(0xFF7B2FF7).withValues(alpha: 0.2)),
           ),
           child: Row(
             children: [
@@ -936,7 +935,7 @@ class _RegisterLandlordScreenState extends State<RegisterLandlordScreen>
                 Container(
                   padding: const EdgeInsets.all(6),
                   decoration: BoxDecoration(
-                    color: const Color(0xFF7B2FF7).withOpacity(0.1),
+                    color: const Color(0xFF7B2FF7).withValues(alpha: 0.1),
                     borderRadius: BorderRadius.circular(6),
                   ),
                   child: const Icon(Icons.email,
@@ -989,7 +988,7 @@ class _RegisterLandlordScreenState extends State<RegisterLandlordScreen>
                     color: const Color(0xFFF3EEFF),
                     borderRadius: BorderRadius.circular(8),
                     border: Border.all(
-                        color: const Color(0xFF7B2FF7).withOpacity(0.2)),
+                        color: const Color(0xFF7B2FF7).withValues(alpha: 0.2)),
                   ),
                   child: Column(
                     children: [
@@ -1025,7 +1024,7 @@ class _RegisterLandlordScreenState extends State<RegisterLandlordScreen>
         color: Colors.white,
         boxShadow: [
           BoxShadow(
-              color: Colors.black.withOpacity(0.06),
+              color: Colors.black.withValues(alpha: 0.06),
               blurRadius: 16,
               offset: const Offset(0, -4)),
         ],
@@ -1065,7 +1064,7 @@ class _RegisterLandlordScreenState extends State<RegisterLandlordScreen>
                   borderRadius: BorderRadius.circular(14),
                   boxShadow: [
                     BoxShadow(
-                        color: const Color(0xFF7B2FF7).withOpacity(0.35),
+                        color: const Color(0xFF7B2FF7).withValues(alpha: 0.35),
                         blurRadius: 14,
                         offset: const Offset(0, 5)),
                   ],
@@ -1204,7 +1203,7 @@ class _PreviewCard extends StatelessWidget {
           border: Border.all(color: Colors.grey.shade100),
           boxShadow: [
             BoxShadow(
-                color: Colors.black.withOpacity(0.03),
+                color: Colors.black.withValues(alpha: 0.03),
                 blurRadius: 6,
                 offset: const Offset(0, 2)),
           ],

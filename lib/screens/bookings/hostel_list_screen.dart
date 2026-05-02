@@ -37,6 +37,29 @@ class Room {
   }
 }
 
+typedef RoomType = Room;
+
+extension RoomCompat on Room {
+  String get name => roomType
+      .replaceAll('_', ' ')
+      .split(' ')
+      .map((w) => w.isEmpty ? w : '${w[0].toUpperCase()}${w.substring(1)}')
+      .join(' ');
+
+  double get pricePerSemester => price;
+  int get totalSlots => capacity;
+  String get description => 'Comfortable $name with secure student-friendly setup.';
+  String get size => 'Standard';
+  int get maxOccupants => capacity;
+  bool get hasEnsuite => roomType.toLowerCase().contains('self');
+  List<String> get features => const [
+        'WiFi',
+        'Wardrobe',
+        'Study desk',
+        '24/7 water',
+      ];
+}
+
 class Hostel {
   final String id;
   final String name;
@@ -76,6 +99,22 @@ class Hostel {
   }
 }
 
+extension HostelCompat on Hostel {
+  List<Room> get roomTypes => rooms;
+  String get imageUrl => images.isNotEmpty ? images.first : '';
+  bool get isVerified => true;
+  String get district => '';
+  double get rating => 4.5;
+  int get reviews => 0;
+  String get distanceFromCampus => 'Near campus';
+  List<String> get amenities => const [
+        'WiFi',
+        'Water',
+        'Power',
+        'Security',
+      ];
+}
+
 // ─── Screen ───────────────────────────────────────────────────────────────────
 
 class HostelListScreen extends StatefulWidget {
@@ -102,7 +141,7 @@ class _HostelListScreenState extends State<HostelListScreen>
   bool _showFilters = false;
   bool _availableOnly = false;
 
-  final List<String> _filters = ['All', 'Available', 'Self-Contained', 'Shared'];
+  final List<String> _filters = ['All', 'Available', 'Self-Contained', 'Double'];
   final List<String> _sortOptions = ['Default', 'Price (Low)', 'Price (High)'];
 
   List<Hostel> get _filteredHostels {
@@ -127,7 +166,7 @@ class _HostelListScreenState extends State<HostelListScreen>
                 r.roomType.toLowerCase().contains('self-contained')))
             .toList();
         break;
-      case 'Shared':
+        case 'Double':
         result = result
             .where((h) => h.rooms.any((r) =>
                 r.roomType.toLowerCase().contains('double') ||
@@ -182,9 +221,9 @@ class _HostelListScreenState extends State<HostelListScreen>
     try {
       final data = await AuthService.getStudentHostels();
       setState(() {
-        _hostels = (data as List)
-            .map((h) => Hostel.fromJson(h as Map<String, dynamic>))
-            .toList();
+        _hostels = data
+        .map((h) => Hostel.fromJson(h as Map<String, dynamic>))
+        .toList();
       });
     } on DioException catch (e) {
       setState(() {
@@ -231,92 +270,41 @@ class _HostelListScreenState extends State<HostelListScreen>
           slivers: [
             // ── App Bar ──
             SliverAppBar(
-              expandedHeight: 160,
+              expandedHeight: 0,
               floating: false,
               pinned: true,
               elevation: 0,
               backgroundColor: const Color(0xFF1A1F71),
               systemOverlayStyle: SystemUiOverlayStyle.light,
-              flexibleSpace: FlexibleSpaceBar(
-                background: Container(
-                  decoration: const BoxDecoration(
-                    gradient: LinearGradient(
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                      colors: [Color(0xFF1A1F71), Color(0xFF2D3561)],
-                    ),
-                  ),
-                  child: SafeArea(
-                    child: Padding(
-                      padding: const EdgeInsets.fromLTRB(20, 12, 20, 60),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              const Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    'Find Your',
-                                    style: TextStyle(
-                                      color: Colors.white70,
-                                      fontSize: 14,
-                                      fontWeight: FontWeight.w400,
-                                    ),
-                                  ),
-                                  Text(
-                                    'Student Home 🏠',
-                                    style: TextStyle(
-                                      color: Colors.white,
-                                      fontSize: 22,
-                                      fontWeight: FontWeight.w800,
-                                      letterSpacing: -0.5,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                              Container(
-                                decoration: BoxDecoration(
-                                  color: Colors.white.withOpacity(0.15),
-                                  borderRadius: BorderRadius.circular(12),
-                                ),
-                                child: IconButton(
-                                  onPressed: _loadHostels,
-                                  icon: const Icon(Icons.refresh_outlined,
-                                      color: Colors.white),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
+              title: const Text(
+                'Student Home 🏠',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 18,
+                  fontWeight: FontWeight.w700,
                 ),
               ),
-              bottom: PreferredSize(
-                preferredSize: const Size.fromHeight(0),
-                child: Container(),
-              ),
+              actions: [
+                IconButton(
+                  onPressed: _loadHostels,
+                  icon: const Icon(Icons.refresh_outlined, color: Colors.white),
+                ),
+              ],
             ),
 
             // ── Search Bar ──
             SliverToBoxAdapter(
-              child: Transform.translate(
-                offset: const Offset(0, -24),
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 20),
-                  child: Column(
-                    children: [
-                      Container(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
+                child: Column(
+                  children: [
+                    Container(
                         decoration: BoxDecoration(
                           color: Colors.white,
                           borderRadius: BorderRadius.circular(16),
                           boxShadow: [
                             BoxShadow(
-                              color: Colors.black.withOpacity(0.08),
+                              color: Colors.black.withValues(alpha: 0.08),
                               blurRadius: 20,
                               offset: const Offset(0, 4),
                             ),
@@ -374,12 +362,11 @@ class _HostelListScreenState extends State<HostelListScreen>
                   ),
                 ),
               ),
-            ),
 
             // ── Filter Chips ──
             SliverToBoxAdapter(
-              child: Transform.translate(
-                offset: const Offset(0, -12),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 12),
                 child: SizedBox(
                   height: 44,
                   child: ListView.separated(
@@ -410,7 +397,7 @@ class _HostelListScreenState extends State<HostelListScreen>
                                 ? [
                                     BoxShadow(
                                         color: const Color(0xFF1A1F71)
-                                            .withOpacity(0.3),
+                                            .withValues(alpha: 0.3),
                                         blurRadius: 8,
                                         offset: const Offset(0, 2))
                                   ]
@@ -581,7 +568,7 @@ class _HostelListScreenState extends State<HostelListScreen>
         borderRadius: BorderRadius.circular(16),
         boxShadow: [
           BoxShadow(
-              color: Colors.black.withOpacity(0.06),
+              color: Colors.black.withValues(alpha: 0.06),
               blurRadius: 12,
               offset: const Offset(0, 4)),
         ],
@@ -589,7 +576,7 @@ class _HostelListScreenState extends State<HostelListScreen>
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text('Max Price / Month',
+          const Text('Max Price / Semester',
               style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
           const SizedBox(height: 4),
           Row(
@@ -615,7 +602,7 @@ class _HostelListScreenState extends State<HostelListScreen>
               activeTrackColor: const Color(0xFF1A1F71),
               thumbColor: const Color(0xFF1A1F71),
               inactiveTrackColor: Colors.grey.shade200,
-              overlayColor: const Color(0xFF1A1F71).withOpacity(0.1),
+              overlayColor: const Color(0xFF1A1F71).withValues(alpha: 0.1),
             ),
             child: Slider(
               value: _maxPrice,
@@ -703,7 +690,7 @@ class _HostelCard extends StatelessWidget {
           borderRadius: BorderRadius.circular(20),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withOpacity(0.06),
+              color: Colors.black.withValues(alpha: 0.06),
               blurRadius: 16,
               offset: const Offset(0, 4),
             ),
@@ -760,7 +747,7 @@ class _HostelCard extends StatelessWidget {
                       padding: const EdgeInsets.symmetric(
                           horizontal: 10, vertical: 4),
                       decoration: BoxDecoration(
-                        color: Colors.black.withOpacity(0.6),
+                        color: Colors.black.withValues(alpha: 0.6),
                         borderRadius: BorderRadius.circular(12),
                       ),
                       child: Text(
@@ -902,7 +889,7 @@ class _HostelCard extends StatelessWidget {
                               color: Color(0xFF1A1F71),
                             ),
                           ),
-                          Text('/month',
+                          Text('/semester',
                               style: TextStyle(
                                   fontSize: 11, color: Colors.grey.shade500)),
                         ],

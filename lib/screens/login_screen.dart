@@ -1,17 +1,17 @@
 // ignore_for_file: unused_element
+import 'package:clerk_flutter/clerk_flutter.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:student_hostel_management/screens/bookings/hostel_list_screen.dart';
+import 'package:student_hostel_management/screens/bookings/student_dashboard_screen.dart';
 import 'role_select_screen.dart';
 import 'register_screen.dart';
 import 'reset_password_screen.dart';
-import 'admin/admin_dashboard_screen.dart';
 import 'university/university_dashboard_screen.dart';
 import 'landlord/landlord_dashboard_screen.dart';
-import 'package:clerk_flutter/clerk_flutter.dart';
-import '../services/api_client.dart';
+import 'landlord/landlord_models.dart';
 import 'package:dio/dio.dart';
 import '../services/auth_service.dart';
+import '../services/api_client.dart';
 
 
 class LoginScreen extends StatefulWidget {
@@ -24,26 +24,27 @@ class LoginScreen extends StatefulWidget {
 
 class _LoginScreenState extends State<LoginScreen>
     with TickerProviderStateMixin {
-      // Add this inside _LoginScreenState, at the top
-late ClerkAuthController _clerkAuth;
+late ClerkAuthState _clerkAuth;
+bool _checkedExistingSession = false;
 
 @override
 void didChangeDependencies() {
   super.didChangeDependencies();
-  _clerkAuth = ClerkAuthController();
+  _clerkAuth = ClerkAuth.of(context, listen: false);
+  if (!_checkedExistingSession) {
+    _checkedExistingSession = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _resumeExistingSessionIfNeeded();
+    });
+  }
 }
   final _formKey = GlobalKey<FormState>();
 
   // Common
   final _passwordController = TextEditingController();
 
-  // Student / University / Admin
+  // Student / Landlord / University
   final _emailController = TextEditingController();
-
-  // Landlord
-  final _usernameController = TextEditingController();
-  final _landlordCodeController = TextEditingController();
-  bool _useLandlordCode = false;  // toggle: username vs landlord code
 
   bool _obscurePassword = true;
   bool _isLoading = false;
@@ -61,7 +62,6 @@ void didChangeDependencies() {
       case UserRole.student:     return const Color(0xFF1A1F71);
       case UserRole.landlord:    return const Color(0xFF006B4F);
       case UserRole.university:  return const Color(0xFF7B2FF7);
-      case UserRole.admin:       return const Color(0xFFB45309);
     }
   }
 
@@ -70,7 +70,6 @@ void didChangeDependencies() {
       case UserRole.student:     return const Color(0xFF4F5FD4);
       case UserRole.landlord:    return const Color(0xFF00A876);
       case UserRole.university:  return const Color(0xFF9B5FF7);
-      case UserRole.admin:       return const Color(0xFFD97706);
     }
   }
 
@@ -79,7 +78,6 @@ void didChangeDependencies() {
       case UserRole.student:     return 'Student';
       case UserRole.landlord:    return 'Landlord';
       case UserRole.university:  return 'University';
-      case UserRole.admin:       return 'Admin';
     }
   }
 
@@ -88,7 +86,6 @@ void didChangeDependencies() {
       case UserRole.student:     return '🎓';
       case UserRole.landlord:    return '🏢';
       case UserRole.university:  return '🏛️';
-      case UserRole.admin:       return '⚙️';
     }
   }
 
@@ -97,11 +94,9 @@ void didChangeDependencies() {
       case UserRole.student:
         return 'Sign in with your student email and password.';
       case UserRole.landlord:
-        return 'Sign in with your username or landlord code provided by your university.';
+        return 'Sign in with the landlord email and password provided by your university.';
       case UserRole.university:
         return 'Sign in with the credentials sent to your institution email.';
-      case UserRole.admin:
-        return 'System administrator access only.';
     }
   }
 
@@ -137,10 +132,117 @@ void didChangeDependencies() {
     _shakeController.dispose();
     _emailController.dispose();
     _passwordController.dispose();
-    _usernameController.dispose();
-    _landlordCodeController.dispose();
     super.dispose();
   }
+
+  String _roleKey(UserRole role) {
+    switch (role) {
+      case UserRole.student:
+        return 'student';
+      case UserRole.landlord:
+        return 'landlord';
+      case UserRole.university:
+        return 'university';
+    }
+  }
+
+  Future<void> _configureAuthenticatedSession() async {
+    final sessionToken = await _clerkAuth.sessionToken();
+    ApiClient.setToken(sessionToken.jwt);
+    ApiClient.setTokenRefresher(() async {
+      try {
+        final refreshed = await _clerkAuth.sessionToken();
+        return refreshed.jwt;
+      } catch (_) {
+        return null;
+      }
+    });
+  }
+
+  Future<void> _completeLoginFlow({
+    required bool firstLogin,
+    String? role,
+  }) async {
+    final resolvedRole = role ?? _roleKey(widget.role);
+
+    await _configureAuthenticatedSession();
+
+    if (resolvedRole == 'university') {
+      await AuthService.loadUniversityProfile(_clerkAuth);
+    }
+
+    if (resolvedRole == 'landlord' || resolvedRole == 'university') {
+      ApiService.init(() async {
+        try {
+          final sessionToken = await _clerkAuth.sessionToken();
+          return sessionToken.jwt;
+        } catch (_) {
+          return null;
+        }
+      });
+    }
+
+    if (!mounted) return;
+
+    if (firstLogin &&
+        (resolvedRole == 'landlord' || resolvedRole == 'university')) {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => ResetPasswordScreen(
+            role: resolvedRole == 'landlord'
+                ? UserRole.landlord
+                : UserRole.university,
+            isFirstLogin: true,
+          ),
+        ),
+      );
+      return;
+    }
+
+    switch (resolvedRole) {
+      case 'student':
+        Navigator.pushAndRemoveUntil(
+          context,
+          MaterialPageRoute(builder: (_) => const StudentDashboardScreen()),
+          (route) => false,
+        );
+        break;
+      case 'landlord':
+        Navigator.pushAndRemoveUntil(
+          context,
+          MaterialPageRoute(builder: (_) => const LandlordDashboardScreen()),
+          (route) => false,
+        );
+        break;
+      case 'university':
+        Navigator.pushAndRemoveUntil(
+          context,
+          MaterialPageRoute(builder: (_) => const UniversityDashboardScreen()),
+          (route) => false,
+        );
+        break;
+      default:
+        Navigator.pushAndRemoveUntil(
+          context,
+          MaterialPageRoute(builder: (_) => const StudentDashboardScreen()),
+          (route) => false,
+        );
+        break;
+    }
+  }
+
+  Future<void> _resumeExistingSessionIfNeeded() async {
+    final claims = _clerkAuth.user?.publicMetadata;
+    if (_clerkAuth.user == null && _clerkAuth.session == null) {
+      return;
+    }
+
+    final resolvedRole = claims?['role']?.toString() ?? _roleKey(widget.role);
+    final firstLogin = claims?['firstLogin'] == true;
+    await _completeLoginFlow(firstLogin: firstLogin, role: resolvedRole);
+  }
+
   Future<void> _submit() async {
   if (!_formKey.currentState!.validate()) {
     _shakeController.forward(from: 0);
@@ -151,84 +253,15 @@ void didChangeDependencies() {
   HapticFeedback.mediumImpact();
 
   try {
-    late bool firstLogin;
-
-    if (widget.role == UserRole.landlord && _useLandlordCode) {
-      final result = await AuthService.loginWithCode(
-        auth: _clerkAuth,
-        landlordCode: _landlordCodeController.text.trim(),
-        password: _passwordController.text,
-      );
-      firstLogin = result.firstLogin;
-    } else {
-      final result = await AuthService.login(
-        auth: _clerkAuth,
-        email: _emailController.text.trim(),
-        password: _passwordController.text,
-      );
-      firstLogin = result.firstLogin;
-
-if (widget.role == UserRole.university) {
-  await AuthService.loadUniversityProfile(_clerkAuth);
-}
-    }
-
-    if (!mounted) return;
-
-    // First login → reset password screen
-    if (firstLogin &&
-        (widget.role == UserRole.landlord ||
-            widget.role == UserRole.university)) {
-      Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (_) => ResetPasswordScreen(
-            role: widget.role,
-            isFirstLogin: true,
-          ),
-        ),
-      );
-      return;
-    }
-    final clerkAuth = ClerkAuth.of(context); // or however you access Clerk
-
-Navigator.pushReplacement(
-  context,
-  MaterialPageRoute(
-    builder: (_) => AdminDashboardScreen(
-      apiService: AdminApiService(
-        tokenProvider: () async {
-          // This calls Clerk's getToken() — always fresh, never stale
-          return await clerkAuth.session?.getToken();
-        },
-      ),
-    ),
-  ),
-),
-
-    // Navigate to correct dashboard
-    switch (widget.role) {
-      case UserRole.student:
-        Navigator.pushAndRemoveUntil(context,
-            MaterialPageRoute(builder: (_) => const HostelListScreen()),
-            (route) => false);
-        break;
-      case UserRole.landlord:
-        Navigator.pushAndRemoveUntil(context,
-            MaterialPageRoute(builder: (_) => const LandlordDashboardScreen()),
-            (route) => false);
-        break;
-      case UserRole.university:
-        Navigator.pushAndRemoveUntil(context,
-            MaterialPageRoute(builder: (_) => const UniversityDashboardScreen()),
-            (route) => false);
-        break;
-      case UserRole.admin:
-        Navigator.pushAndRemoveUntil(context,
-            MaterialPageRoute(builder: (_) => const AdminDashboardScreen()),
-            (route) => false);
-        break;
-    }
+    final result = await AuthService.login(
+      auth: _clerkAuth,
+      email: _emailController.text.trim(),
+      password: _passwordController.text,
+    );
+    await _completeLoginFlow(
+      firstLogin: result.firstLogin,
+      role: result.role,
+    );
 
   } on DioException catch (e) {
     final statusCode = e.response?.statusCode;
@@ -240,7 +273,20 @@ Navigator.pushReplacement(
     }
     _shakeController.forward(from: 0);
   } catch (e) {
-    _showError('Login failed. Check your credentials.');
+    final raw = e.toString();
+    final cleaned = raw
+        .replaceAll(' (ERROR RECEIVED FROM SERVER)', '')
+        .replaceAll('\n', ' ')
+        .trim();
+    if (cleaned.toLowerCase().contains('already signed in')) {
+      final claims = _clerkAuth.user?.publicMetadata;
+      await _completeLoginFlow(
+        firstLogin: claims?['firstLogin'] == true,
+        role: claims?['role']?.toString(),
+      );
+      return;
+    }
+    _showError(cleaned.isNotEmpty ? cleaned : 'Login failed. Please try again.');
     _shakeController.forward(from: 0);
   } finally {
     if (mounted) setState(() => _isLoading = false);
@@ -262,240 +308,238 @@ void _showError(String message) {
   );
 }
 
+void _goToRoleSelection() {
+  Navigator.of(context).pushAndRemoveUntil(
+    MaterialPageRoute(builder: (_) => const RoleSelectScreen()),
+    (route) => false,
+  );
+}
+
   @override
   Widget build(BuildContext context) {
     return AnnotatedRegion<SystemUiOverlayStyle>(
       value: SystemUiOverlayStyle.dark,
-      child: Scaffold(
-        backgroundColor: const Color(0xFFF8F9FE),
-        body: Column(
-          children: [
-            // ── Curved Header ──
-            _buildHeader(),
-
-            // ── Form ──
-            Expanded(
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.fromLTRB(24, 0, 24, 40),
-                child: SlideTransition(
-                  position: _entrySlide,
-                  child: FadeTransition(
-                    opacity: _entryFade,
-                    child: Form(
-                      key: _formKey,
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const SizedBox(height: 28),
-
-                          // Hint banner
-                          _buildHintBanner(),
-
-                          const SizedBox(height: 28),
-
-                          // Role-specific fields
-                          _buildFields(),
-
-                          const SizedBox(height: 24),
-
-                          // Forgot password (Student/University/Admin)
-                          if (widget.role != UserRole.landlord)
-                            Align(
-                              alignment: Alignment.centerRight,
-                              child: GestureDetector(
-                                onTap: () => Navigator.push(
-                                  context,
-                                  MaterialPageRoute(
-                                    builder: (_) => ResetPasswordScreen(
-                                      role: widget.role,
-                                      isFirstLogin: false,
-                                    ),
-                                  ),
-                                ),
-                                child: Text(
-                                  'Forgot Password?',
-                                  style: TextStyle(
-                                    color: _roleColor,
-                                    fontWeight: FontWeight.w600,
-                                    fontSize: 13,
-                                  ),
-                                ),
-                              ),
-                            ),
-
-                          // First login toggle (Landlord / University)
-                          if (widget.role == UserRole.landlord ||
-                              widget.role == UserRole.university) ...[
-                            const SizedBox(height: 4),
-                            Row(
-                              children: [
-                                Checkbox(
-                                  value: _isFirstLogin,
-                                  activeColor: _roleColor,
-                                  shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.circular(4)),
-                                  onChanged: (v) =>
-                                      setState(() => _isFirstLogin = v!),
-                                ),
-                                Expanded(
-                                  child: GestureDetector(
-                                    onTap: () => setState(
-                                        () => _isFirstLogin = !_isFirstLogin),
-                                    child: Text(
-                                      'This is my first time signing in (reset password)',
-                                      style: TextStyle(
-                                        fontSize: 13,
-                                        color: Colors.grey.shade600,
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ],
-
-                          const SizedBox(height: 32),
-
-                          // ── Sign In Button ──
-                          AnimatedBuilder(
-                            animation: _shake,
-                            builder: (_, child) => Transform.translate(
-                              offset: Offset(
-                                _shakeController.isAnimating
-                                    ? 8 *
-                                        (0.5 - (_shake.value - 0.5).abs()) *
-                                        2 *
-                                        (_shake.value < 0.5 ? 1 : -1)
-                                    : 0,
-                                0,
-                              ),
-                              child: child,
-                            ),
-                            child: GestureDetector(
-                              onTap: _isLoading ? null : _submit,
-                              child: Container(
-                                width: double.infinity,
-                                padding:
-                                    const EdgeInsets.symmetric(vertical: 17),
-                                decoration: BoxDecoration(
-                                  gradient: LinearGradient(
-                                    colors: [_roleColor, _roleAccent],
-                                    begin: Alignment.centerLeft,
-                                    end: Alignment.centerRight,
-                                  ),
-                                  borderRadius: BorderRadius.circular(16),
-                                  boxShadow: [
-                                    BoxShadow(
-                                      color: _roleColor.withOpacity(0.35),
-                                      blurRadius: 16,
-                                      offset: const Offset(0, 6),
-                                    ),
-                                  ],
-                                ),
-                                child: Center(
-                                  child: _isLoading
-                                      ? const SizedBox(
-                                          width: 22,
-                                          height: 22,
-                                          child: CircularProgressIndicator(
-                                            color: Colors.white,
-                                            strokeWidth: 2.5,
-                                          ),
-                                        )
-                                      : const Text(
-                                          'Sign In',
-                                          style: TextStyle(
-                                            color: Colors.white,
-                                            fontWeight: FontWeight.w700,
-                                            fontSize: 16,
-                                          ),
-                                        ),
-                                ),
-                              ),
-                            ),
-                          ),
-
-                          const SizedBox(height: 28),
-
-                          // Register link (students only)
-                          if (widget.role == UserRole.student) ...[
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                Text(
-                                  "Don't have an account? ",
-                                  style: TextStyle(
-                                    color: Colors.grey.shade500,
-                                    fontSize: 14,
-                                  ),
-                                ),
-                                GestureDetector(
+      child: PopScope(
+        canPop: false,
+        onPopInvokedWithResult: (didPop, result) {
+          if (!didPop) {
+            _goToRoleSelection();
+          }
+        },
+        child: Scaffold(
+          backgroundColor: const Color(0xFFF8F9FE),
+          body: Column(
+            children: [
+              _buildHeader(),
+              Expanded(
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.fromLTRB(24, 0, 24, 40),
+                  child: SlideTransition(
+                    position: _entrySlide,
+                    child: FadeTransition(
+                      opacity: _entryFade,
+                      child: Form(
+                        key: _formKey,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const SizedBox(height: 28),
+                            _buildHintBanner(),
+                            const SizedBox(height: 28),
+                            _buildFields(),
+                            const SizedBox(height: 24),
+                            if (widget.role != UserRole.landlord)
+                              Align(
+                                alignment: Alignment.centerRight,
+                                child: GestureDetector(
                                   onTap: () => Navigator.push(
                                     context,
                                     MaterialPageRoute(
-                                      builder: (_) =>
-                                          const RegisterScreen(),
+                                      builder: (_) => ResetPasswordScreen(
+                                        role: widget.role,
+                                        isFirstLogin: false,
+                                      ),
                                     ),
                                   ),
                                   child: Text(
-                                    'Register',
+                                    'Forgot Password?',
                                     style: TextStyle(
                                       color: _roleColor,
-                                      fontWeight: FontWeight.w700,
-                                      fontSize: 14,
+                                      fontWeight: FontWeight.w600,
+                                      fontSize: 13,
                                     ),
                                   ),
                                 ),
-                              ],
-                            ),
-                          ],
-
-                          // Info for non-student roles
-                          if (widget.role != UserRole.student) ...[
-                            Center(
-                              child: Container(
-                                padding: const EdgeInsets.symmetric(
-                                    horizontal: 16, vertical: 12),
-                                decoration: BoxDecoration(
-                                  color: _roleColor.withOpacity(0.06),
-                                  borderRadius: BorderRadius.circular(12),
-                                  border: Border.all(
-                                      color: _roleColor.withOpacity(0.15)),
-                                ),
-                                child: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Icon(Icons.info_outline,
-                                        color: _roleColor, size: 15),
-                                    const SizedBox(width: 8),
-                                    Flexible(
+                              ),
+                            if (widget.role == UserRole.landlord ||
+                                widget.role == UserRole.university) ...[
+                              const SizedBox(height: 4),
+                              Row(
+                                children: [
+                                  Checkbox(
+                                    value: _isFirstLogin,
+                                    activeColor: _roleColor,
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(4),
+                                    ),
+                                    onChanged: (v) =>
+                                        setState(() => _isFirstLogin = v!),
+                                  ),
+                                  Expanded(
+                                    child: GestureDetector(
+                                      onTap: () => setState(
+                                        () =>
+                                            _isFirstLogin = !_isFirstLogin,
+                                      ),
                                       child: Text(
-                                        widget.role == UserRole.landlord
-                                            ? 'Credentials are provided by your university.'
-                                            : widget.role ==
-                                                    UserRole.university
-                                                ? 'Credentials are provided by the General Admin.'
-                                                : 'Access restricted to system administrators.',
+                                        'This is my first time signing in (reset password)',
                                         style: TextStyle(
-                                          fontSize: 12,
-                                          color: _roleColor,
-                                          fontWeight: FontWeight.w500,
+                                          fontSize: 13,
+                                          color: Colors.grey.shade600,
                                         ),
                                       ),
                                     ),
-                                  ],
+                                  ),
+                                ],
+                              ),
+                            ],
+                            const SizedBox(height: 32),
+                            AnimatedBuilder(
+                              animation: _shake,
+                              builder: (_, child) => Transform.translate(
+                                offset: Offset(
+                                  _shakeController.isAnimating
+                                      ? 8 *
+                                          (0.5 - (_shake.value - 0.5).abs()) *
+                                          2 *
+                                          (_shake.value < 0.5 ? 1 : -1)
+                                      : 0,
+                                  0,
+                                ),
+                                child: child,
+                              ),
+                              child: GestureDetector(
+                                onTap: _isLoading ? null : _submit,
+                                child: Container(
+                                  width: double.infinity,
+                                  padding:
+                                      const EdgeInsets.symmetric(vertical: 17),
+                                  decoration: BoxDecoration(
+                                    gradient: LinearGradient(
+                                      colors: [_roleColor, _roleAccent],
+                                      begin: Alignment.centerLeft,
+                                      end: Alignment.centerRight,
+                                    ),
+                                    borderRadius: BorderRadius.circular(16),
+                                    boxShadow: [
+                                      BoxShadow(
+                                        color: _roleColor.withValues(alpha: 0.35),
+                                        blurRadius: 16,
+                                        offset: const Offset(0, 6),
+                                      ),
+                                    ],
+                                  ),
+                                  child: Center(
+                                    child: _isLoading
+                                        ? const SizedBox(
+                                            width: 22,
+                                            height: 22,
+                                            child: CircularProgressIndicator(
+                                              color: Colors.white,
+                                              strokeWidth: 2.5,
+                                            ),
+                                          )
+                                        : const Text(
+                                            'Sign In',
+                                            style: TextStyle(
+                                              color: Colors.white,
+                                              fontWeight: FontWeight.w700,
+                                              fontSize: 16,
+                                            ),
+                                          ),
+                                  ),
                                 ),
                               ),
                             ),
+                            const SizedBox(height: 28),
+                            if (widget.role == UserRole.student) ...[
+                              Row(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  Text(
+                                    "Don't have an account? ",
+                                    style: TextStyle(
+                                      color: Colors.grey.shade500,
+                                      fontSize: 14,
+                                    ),
+                                  ),
+                                  GestureDetector(
+                                    onTap: () => Navigator.push(
+                                      context,
+                                      MaterialPageRoute(
+                                        builder: (_) => const RegisterScreen(),
+                                      ),
+                                    ),
+                                    child: Text(
+                                      'Register',
+                                      style: TextStyle(
+                                        color: _roleColor,
+                                        fontWeight: FontWeight.w700,
+                                        fontSize: 14,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ],
+                            if (widget.role != UserRole.student) ...[
+                              Center(
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 16,
+                                    vertical: 12,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: _roleColor.withValues(alpha: 0.06),
+                                    borderRadius: BorderRadius.circular(12),
+                                    border: Border.all(
+                                      color: _roleColor.withValues(alpha: 0.15),
+                                    ),
+                                  ),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Icon(Icons.info_outline,
+                                          color: _roleColor, size: 15),
+                                      const SizedBox(width: 8),
+                                      Flexible(
+                                        child: Text(
+                                          widget.role == UserRole.landlord
+                                              ? 'Credentials are provided by your university.'
+                                              : widget.role == UserRole.university
+                                                  ? 'Credentials are provided by the General Admin.'
+                                                  : 'Access restricted to system administrators.',
+                                          style: TextStyle(
+                                            fontSize: 12,
+                                            color: _roleColor,
+                                            fontWeight: FontWeight.w500,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            ],
                           ],
-                        ],
+                        ),
                       ),
                     ),
                   ),
                 ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
@@ -525,7 +569,7 @@ void _showError(String message) {
                 height: 140,
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
-                  color: Colors.white.withOpacity(0.07),
+                  color: Colors.white.withValues(alpha: 0.07),
                 ),
               ),
             ),
@@ -537,7 +581,7 @@ void _showError(String message) {
                 height: 60,
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
-                  color: Colors.white.withOpacity(0.06),
+                  color: Colors.white.withValues(alpha: 0.06),
                 ),
               ),
             ),
@@ -549,11 +593,11 @@ void _showError(String message) {
                 children: [
                   // Back button
                   GestureDetector(
-                    onTap: () => Navigator.pop(context),
+                    onTap: _goToRoleSelection,
                     child: Container(
                       padding: const EdgeInsets.all(8),
                       decoration: BoxDecoration(
-                        color: Colors.white.withOpacity(0.15),
+                        color: Colors.white.withValues(alpha: 0.15),
                         borderRadius: BorderRadius.circular(10),
                       ),
                       child: const Icon(Icons.arrow_back,
@@ -584,7 +628,7 @@ void _showError(String message) {
                             'UniStay Platform',
                             style: TextStyle(
                               fontSize: 13,
-                              color: Colors.white.withOpacity(0.65),
+                              color: Colors.white.withValues(alpha: 0.65),
                             ),
                           ),
                         ],
@@ -606,9 +650,9 @@ void _showError(String message) {
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: _roleColor.withOpacity(0.07),
+        color: _roleColor.withValues(alpha: 0.07),
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: _roleColor.withOpacity(0.18)),
+        border: Border.all(color: _roleColor.withValues(alpha: 0.18)),
       ),
       child: Row(
         children: [
@@ -640,8 +684,6 @@ void _showError(String message) {
         return _buildLandlordFields();
       case UserRole.university:
         return _buildUniversityFields();
-      case UserRole.admin:
-        return _buildAdminFields();
     }
   }
 
@@ -674,122 +716,22 @@ void _showError(String message) {
     );
   }
 
-  // Landlord: username OR landlord code + password
+  // Landlord: email + password
   Widget _buildLandlordFields() {
     return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // Toggle: username vs landlord code
-        Container(
-          decoration: BoxDecoration(
-            color: Colors.grey.shade100,
-            borderRadius: BorderRadius.circular(12),
-          ),
-          padding: const EdgeInsets.all(4),
-          child: Row(
-            children: [
-              Expanded(
-                child: GestureDetector(
-                  onTap: () => setState(() => _useLandlordCode = false),
-                  child: AnimatedContainer(
-                    duration: const Duration(milliseconds: 200),
-                    padding: const EdgeInsets.symmetric(vertical: 10),
-                    decoration: BoxDecoration(
-                      color: !_useLandlordCode ? Colors.white : Colors.transparent,
-                      borderRadius: BorderRadius.circular(9),
-                      boxShadow: !_useLandlordCode
-                          ? [
-                              BoxShadow(
-                                color: Colors.black.withOpacity(0.06),
-                                blurRadius: 6,
-                              )
-                            ]
-                          : [],
-                    ),
-                    child: Center(
-                      child: Text(
-                        'Username',
-                        style: TextStyle(
-                          fontSize: 13,
-                          fontWeight: !_useLandlordCode
-                              ? FontWeight.w700
-                              : FontWeight.w400,
-                          color: !_useLandlordCode
-                              ? _roleColor
-                              : Colors.grey.shade500,
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-              Expanded(
-                child: GestureDetector(
-                  onTap: () => setState(() => _useLandlordCode = true),
-                  child: AnimatedContainer(
-                    duration: const Duration(milliseconds: 200),
-                    padding: const EdgeInsets.symmetric(vertical: 10),
-                    decoration: BoxDecoration(
-                      color: _useLandlordCode ? Colors.white : Colors.transparent,
-                      borderRadius: BorderRadius.circular(9),
-                      boxShadow: _useLandlordCode
-                          ? [
-                              BoxShadow(
-                                color: Colors.black.withOpacity(0.06),
-                                blurRadius: 6,
-                              )
-                            ]
-                          : [],
-                    ),
-                    child: Center(
-                      child: Text(
-                        'Landlord Code',
-                        style: TextStyle(
-                          fontSize: 13,
-                          fontWeight: _useLandlordCode
-                              ? FontWeight.w700
-                              : FontWeight.w400,
-                          color: _useLandlordCode
-                              ? _roleColor
-                              : Colors.grey.shade500,
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-
-        const SizedBox(height: 14),
-
-        // Username OR Landlord Code
-        AnimatedSwitcher(
-          duration: const Duration(milliseconds: 250),
-          child: _useLandlordCode
-              ? _InputField(
-                  key: const ValueKey('code'),
-                  controller: _landlordCodeController,
-                  label: 'Landlord Code',
-                  hint: 'Enter your landlord code',
-                  icon: Icons.vpn_key_outlined,
-                  roleColor: _roleColor,
-                  validator: (v) => v == null || v.trim().isEmpty
-                      ? 'Landlord code is required'
-                      : null,
-                )
-              : _InputField(
-                  key: const ValueKey('username'),
-                  controller: _usernameController,
-                  label: 'Username',
-                  hint: 'Enter your username',
-                  icon: Icons.person_outline,
-                  roleColor: _roleColor,
-                  validator: (v) => v == null || v.trim().isEmpty
-                      ? 'Username is required'
-                      : null,
-                ),
+        _InputField(
+          controller: _emailController,
+          label: 'Landlord Email',
+          hint: 'e.g. landlord@example.com',
+          icon: Icons.email_outlined,
+          roleColor: _roleColor,
+          keyboardType: TextInputType.emailAddress,
+          validator: (v) {
+            if (v == null || v.trim().isEmpty) return 'Email is required';
+            if (!v.contains('@')) return 'Enter a valid email address';
+            return null;
+          },
         ),
 
         const SizedBox(height: 14),
@@ -836,46 +778,6 @@ void _showError(String message) {
     );
   }
 
-  // Admin: email + password
-  Widget _buildAdminFields() {
-    return Column(
-      children: [
-        _InputField(
-          controller: _emailController,
-          label: 'Admin Email',
-          hint: 'info@hostelbooking.com',
-          icon: Icons.admin_panel_settings_outlined,
-          roleColor: _roleColor,
-          keyboardType: TextInputType.emailAddress,
-          validator: (v) {
-            if (v == null || v.trim().isEmpty) return 'Email is required';
-            if (!v.contains('@')) return 'Enter a valid email address';
-            return null;
-          },
-        ),
-        const SizedBox(height: 14),
-        _PasswordField(
-          controller: _passwordController,
-          roleColor: _roleColor,
-          obscure: _obscurePassword,
-          onToggle: () =>
-              setState(() => _obscurePassword = !_obscurePassword),
-        ),
-      ],
-    );
-  }
-}
-
-class ClerkAuthController {
-  get session => null;
-
-  get user => null;
-
-  signOut() {}
-
-  signIn({required strategy, required String identifier, required String password}) {}
-
-  sessionToken() {}
 }
 
 // ─── Reusable Input Field ──────────────────────────────────────────────────────
@@ -890,7 +792,6 @@ class _InputField extends StatelessWidget {
   final String? Function(String?)? validator;
 
   const _InputField({
-    super.key,
     required this.controller,
     required this.label,
     required this.hint,

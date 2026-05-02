@@ -1,7 +1,7 @@
+import 'package:clerk_auth/clerk_auth.dart' as clerk_auth;
 import 'package:clerk_flutter/clerk_flutter.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
-import 'package:student_hostel_management/screens/login_screen.dart';
 import 'package:student_hostel_management/screens/university/university_models.dart';
 import 'api_client.dart';
 
@@ -9,17 +9,17 @@ class AuthService {
   static final _dio = ApiClient.dio;
 
   static Future<({bool firstLogin, String role})> login({
-    required ClerkAuthController auth,
+    required ClerkAuthState auth,
     required String email,
     required String password,
   }) async {
-    await auth.signIn(
-      strategy: 'password',
+    await auth.attemptSignIn(
+      strategy: clerk_auth.Strategy.password,
       identifier: email,
       password: password,
     );
 
-    // ✅ Correct way to get JWT token
+    // Get a fresh JWT token
     final sessionToken = await auth.sessionToken();
     final token = sessionToken.jwt;
     if (token.isEmpty) throw Exception('Login failed — no session token');
@@ -27,6 +27,16 @@ class AuthService {
     // Attach to all future API requests
     ApiClient.setToken(token);
 
+    // Register refresher so every subsequent request gets a fresh token
+    // (Clerk tokens expire after 60 s; this ensures automatic renewal)
+    ApiClient.setTokenRefresher(() async {
+      try {
+        final st = await auth.sessionToken();
+        return st.jwt;
+      } catch (_) {
+        return null;
+      }
+    });
     // Read claims your backend set in Clerk
     final claims = auth.user?.publicMetadata;
     final bool firstLogin = claims?['firstLogin'] ?? false;
@@ -37,21 +47,17 @@ class AuthService {
 
 
   static Future<({bool firstLogin, String role})> loginWithCode({
-    required ClerkAuthController auth,
+    required ClerkAuthState auth,
     required String landlordCode,
     required String password,
   }) async {
-    // Resolve landlord code to email via backend first
-    final response = await _dio.post(
-      '/landlord/auth/resolve-code',
-      data: {'landlord_code': landlordCode},
+    throw UnimplementedError(
+      'Landlord code sign-in is not supported by the current API. Use email and password instead.',
     );
-    final email = response.data['data']['email'];
-    return login(auth: auth, email: email, password: password);
   }
 
   static Future<void> logout({
-    required ClerkAuthController auth,
+    required ClerkAuthState auth,
     required String role,
   }) async {
     final endpoint = switch (role) {
@@ -111,6 +117,11 @@ static Future<List<dynamic>> getHostels() async {
   return response.data['data'];
 }
 
+static Future<List<dynamic>> getStudentHostels() async {
+  final response = await _dio.get('/student/hostels');
+  return response.data['data'];
+}
+
 static Future<Map<String, dynamic>> registerLandlord({
   required String fullName,
   required String gender,
@@ -155,7 +166,7 @@ static Future<void> logoutUniversity() async {
 // Fetch current university profile from session claims
 // Called once after login to populate UniversityStore
 static Future<void> loadUniversityProfile(
-    ClerkAuthController auth) async {
+    ClerkAuthState auth) async {
   try {
     final claims = auth.session?.publicUserData.toJson();
 

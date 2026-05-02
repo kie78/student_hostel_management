@@ -46,7 +46,6 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen>
       case UserRole.student:    return const Color(0xFF1A1F71);
       case UserRole.landlord:   return const Color(0xFF006B4F);
       case UserRole.university: return const Color(0xFF7B2FF7);
-      case UserRole.admin:      return const Color(0xFFB45309);
     }
   }
 
@@ -55,7 +54,6 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen>
       case UserRole.student:    return const Color(0xFF4F5FD4);
       case UserRole.landlord:   return const Color(0xFF00A876);
       case UserRole.university: return const Color(0xFF9B5FF7);
-      case UserRole.admin:      return const Color(0xFFD97706);
     }
   }
 
@@ -106,7 +104,9 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen>
     _newPasswordController.addListener(() => setState(() {}));
 
     // If first login, skip directly to new-password step
-    if (widget.isFirstLogin) _step = 0;
+    if (widget.isFirstLogin) {
+      _step = 0;
+    }
   }
 
   @override
@@ -116,8 +116,12 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen>
     _emailController.dispose();
     _newPasswordController.dispose();
     _confirmPasswordController.dispose();
-    for (final c in _otpControllers) c.dispose();
-    for (final f in _otpFocusNodes) f.dispose();
+    for (final c in _otpControllers) {
+      c.dispose();
+    }
+    for (final f in _otpFocusNodes) {
+      f.dispose();
+    }
     super.dispose();
   }
 
@@ -257,7 +261,7 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen>
                 height: 130,
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
-                  color: Colors.white.withOpacity(0.06),
+                  color: Colors.white.withValues(alpha: 0.06),
                 ),
               ),
             ),
@@ -271,7 +275,7 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen>
                     child: Container(
                       padding: const EdgeInsets.all(8),
                       decoration: BoxDecoration(
-                        color: Colors.white.withOpacity(0.15),
+                        color: Colors.white.withValues(alpha: 0.15),
                         borderRadius: BorderRadius.circular(10),
                       ),
                       child: const Icon(Icons.arrow_back,
@@ -298,7 +302,7 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen>
                           Text(
                             'UniStay Account Security',
                             style: TextStyle(
-                                color: Colors.white.withOpacity(0.65),
+                                color: Colors.white.withValues(alpha: 0.65),
                                 fontSize: 12),
                           ),
                         ],
@@ -539,7 +543,7 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen>
                 ? Text(
                     'Resend in ${_resendCountdown}s',
                     style: TextStyle(
-                      color: _roleColor.withOpacity(0.5),
+                      color: _roleColor.withValues(alpha: 0.5),
                       fontSize: 13,
                       fontWeight: FontWeight.w600,
                     ),
@@ -674,8 +678,9 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen>
           style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
           validator: (v) {
             if (v == null || v.isEmpty) return 'Please confirm your password';
-            if (v != _newPasswordController.text)
+            if (v != _newPasswordController.text) {
               return 'Passwords do not match';
+            }
             return null;
           },
           decoration: _inputDeco(
@@ -798,9 +803,9 @@ class _InfoBox extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: color.withOpacity(0.07),
+        color: color.withValues(alpha: 0.07),
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: color.withOpacity(0.2)),
+        border: Border.all(color: color.withValues(alpha: 0.2)),
       ),
       child: Row(
         children: [
@@ -846,7 +851,7 @@ class _PrimaryButton extends StatelessWidget {
           borderRadius: BorderRadius.circular(16),
           boxShadow: [
             BoxShadow(
-              color: color.withOpacity(0.35),
+              color: color.withValues(alpha: 0.35),
               blurRadius: 16,
               offset: const Offset(0, 6),
             ),

@@ -1,12 +1,17 @@
+import 'package:clerk_flutter/clerk_flutter.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'university_models.dart';
 import 'package:dio/dio.dart';
 import '../../services/auth_service.dart';
+import '../login_screen.dart';
+import '../role_select_screen.dart';
+import 'register_landlord_screen.dart';
 
 class UniversityProfileScreen extends StatefulWidget {
   final VoidCallback? onUpdate;
-  const UniversityProfileScreen({super.key, this.onUpdate});
+  final void Function(int)? onTabSelect;
+  const UniversityProfileScreen({super.key, this.onUpdate, this.onTabSelect});
 
   @override
   State<UniversityProfileScreen> createState() =>
@@ -19,6 +24,7 @@ class _UniversityProfileScreenState extends State<UniversityProfileScreen>
   late Animation<double> _entryFade;
   late Animation<Offset> _entrySlide;
   int _activeSection = 0; // 0=overview, 1=students, 2=landlords, 3=hostels
+  bool _isLoggingOut = false;
 
   @override
   void initState() {
@@ -50,37 +56,74 @@ class _UniversityProfileScreenState extends State<UniversityProfileScreen>
     return '${d.day} ${months[d.month - 1]} ${d.year}';
   }
 
+  Future<void> _logoutToLogin() async {
+    if (_isLoggingOut) return;
+
+    setState(() => _isLoggingOut = true);
+    try {
+      final auth = ClerkAuth.of(context, listen: false);
+      await AuthService.logout(auth: auth, role: 'university');
+      if (!mounted) return;
+      Navigator.of(context).pushAndRemoveUntil(
+        MaterialPageRoute(
+          builder: (_) => const LoginScreen(role: UserRole.university),
+        ),
+        (route) => false,
+      );
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _isLoggingOut = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Failed to sign out. Please try again.'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
   void _confirmLogout() {
     showDialog(
       context: context,
-      builder: (_) => AlertDialog(
-        shape:
-            RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: const Text('Sign Out',
-            style: TextStyle(fontWeight: FontWeight.w800)),
-        content:
-            const Text('Are you sure you want to sign out of your account?'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: Text('Cancel',
-                style: TextStyle(color: Colors.grey.shade600)),
-          ),
-          TextButton(
-            onPressed: () async {
-  Navigator.pop(context); // close dialog
-  try {
-    await AuthService.logoutUniversity();
-  } catch (_) {}
-  if (context.mounted) {
-    Navigator.popUntil(context, (r) => r.isFirst);
-  }
-},
-           child: const Text('Sign Out',
-                style: TextStyle(
-                    color: Colors.red, fontWeight: FontWeight.w700)),
-          ),
-        ],
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          title: const Text('Sign Out',
+              style: TextStyle(fontWeight: FontWeight.w800)),
+          content:
+              const Text('Are you sure you want to sign out of your account?'),
+          actions: [
+            TextButton(
+              onPressed: _isLoggingOut
+                  ? null
+                  : () => Navigator.pop(dialogContext),
+              child: Text('Cancel',
+                  style: TextStyle(color: Colors.grey.shade600)),
+            ),
+            TextButton(
+              onPressed: _isLoggingOut
+                  ? null
+                  : () async {
+                      setDialogState(() {});
+                      Navigator.pop(dialogContext);
+                      await _logoutToLogin();
+                    },
+              child: _isLoggingOut
+                  ? const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: Colors.red,
+                      ),
+                    )
+                  : const Text('Sign Out',
+                      style: TextStyle(
+                          color: Colors.red, fontWeight: FontWeight.w700)),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -99,42 +142,13 @@ class _UniversityProfileScreenState extends State<UniversityProfileScreen>
             slivers: [
               // ── Sliver App Bar ──
               SliverAppBar(
-                expandedHeight: 240,
+                expandedHeight: 170,
                 pinned: true,
                 floating: false,
                 elevation: 0,
                 automaticallyImplyLeading: false,
                 backgroundColor: const Color(0xFF7B2FF7),
                 systemOverlayStyle: SystemUiOverlayStyle.light,
-                actions: [
-                  GestureDetector(
-                    onTap: _confirmLogout,
-                    child: Container(
-                      margin: const EdgeInsets.only(right: 16, top: 8, bottom: 8),
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 12, vertical: 6),
-                      decoration: BoxDecoration(
-                        color: Colors.white.withOpacity(0.15),
-                        borderRadius: BorderRadius.circular(20),
-                        border: Border.all(
-                            color: Colors.white.withOpacity(0.2)),
-                      ),
-                      child: const Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(Icons.logout_rounded,
-                              color: Colors.white, size: 15),
-                          SizedBox(width: 5),
-                          Text('Sign Out',
-                              style: TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w600)),
-                        ],
-                      ),
-                    ),
-                  ),
-                ],
                 flexibleSpace: FlexibleSpaceBar(
                   background: Container(
                     decoration: const BoxDecoration(
@@ -153,7 +167,7 @@ class _UniversityProfileScreenState extends State<UniversityProfileScreen>
                             width: 200, height: 200,
                             decoration: BoxDecoration(
                               shape: BoxShape.circle,
-                              color: Colors.white.withOpacity(0.05),
+                              color: Colors.white.withValues(alpha: 0.05),
                             ),
                           ),
                         ),
@@ -163,107 +177,72 @@ class _UniversityProfileScreenState extends State<UniversityProfileScreen>
                             width: 120, height: 120,
                             decoration: BoxDecoration(
                               shape: BoxShape.circle,
-                              color: Colors.white.withOpacity(0.04),
+                              color: Colors.white.withValues(alpha: 0.04),
                             ),
                           ),
                         ),
                         SafeArea(
                           child: Padding(
-                            padding: const EdgeInsets.fromLTRB(24, 20, 24, 24),
+                            padding: const EdgeInsets.fromLTRB(24, 16, 24, 20),
                             child: Column(
                               mainAxisAlignment: MainAxisAlignment.end,
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                // University avatar
+                                Text(
+                                  uni.name,
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 20,
+                                    fontWeight: FontWeight.w900,
+                                    height: 1.2,
+                                  ),
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                                const SizedBox(height: 6),
                                 Row(
                                   children: [
-                                    Container(
-                                      width: 72,
-                                      height: 72,
-                                      decoration: BoxDecoration(
-                                        color:
-                                            Colors.white.withOpacity(0.2),
-                                        borderRadius:
-                                            BorderRadius.circular(20),
-                                        border: Border.all(
-                                          color:
-                                              Colors.white.withOpacity(0.3),
-                                          width: 2,
-                                        ),
-                                      ),
-                                      child: const Center(
-                                        child: Text(
-                                          '🏛️',
-                                          style:
-                                              TextStyle(fontSize: 34),
-                                        ),
-                                      ),
-                                    ),
-                                    const SizedBox(width: 16),
+                                    const Icon(Icons.email_outlined,
+                                        color: Colors.white60, size: 13),
+                                    const SizedBox(width: 5),
                                     Expanded(
-                                      child: Column(
-                                        crossAxisAlignment:
-                                            CrossAxisAlignment.start,
-                                        children: [
-                                          Text(
-                                            uni.name,
-                                            style: const TextStyle(
-                                              color: Colors.white,
-                                              fontSize: 18,
-                                              fontWeight: FontWeight.w900,
-                                              height: 1.2,
-                                            ),
-                                            maxLines: 2,
-                                            overflow:
-                                                TextOverflow.ellipsis,
-                                          ),
-                                          const SizedBox(height: 6),
-                                          Row(
-                                            children: [
-                                              _HeaderChip(
-                                                label: uni.type,
-                                                icon: Icons
-                                                    .account_balance_outlined,
-                                              ),
-                                              const SizedBox(width: 8),
-                                              _HeaderChip(
-                                                label: uni.location,
-                                                icon: Icons
-                                                    .location_on_outlined,
-                                              ),
-                                            ],
-                                          ),
-                                        ],
+                                      child: Text(
+                                        uni.email,
+                                        style: const TextStyle(
+                                            color: Colors.white70,
+                                            fontSize: 12),
+                                        overflow: TextOverflow.ellipsis,
                                       ),
                                     ),
                                   ],
                                 ),
-                                const SizedBox(height: 16),
-                                // Quick stats row
+                                const SizedBox(height: 4),
                                 Row(
                                   children: [
-                                    _QuickStat(
-                                      value:
-                                          '${UniversityStore.totalLandlords}',
-                                      label: 'Landlords',
+                                    const Icon(
+                                        Icons.calendar_today_outlined,
+                                        color: Colors.white60,
+                                        size: 13),
+                                    const SizedBox(width: 5),
+                                    Text(
+                                      'Member since ${_formatDate(uni.joinedAt)}',
+                                      style: const TextStyle(
+                                          color: Colors.white70,
+                                          fontSize: 12),
                                     ),
-                                    _VertDivider(),
-                                    _QuickStat(
-                                      value:
-                                          '${UniversityStore.totalStudents}',
-                                      label: 'Students',
+                                  ],
+                                ),
+                                const SizedBox(height: 10),
+                                Row(
+                                  children: [
+                                    _HeaderChip(
+                                      label: uni.type,
+                                      icon: Icons.account_balance_outlined,
                                     ),
-                                    _VertDivider(),
-                                    _QuickStat(
-                                      value:
-                                          '${UniversityStore.totalHostels}',
-                                      label: 'Hostels',
-                                    ),
-                                    _VertDivider(),
-                                    _QuickStat(
-                                      value:
-                                          '${UniversityStore.totalRooms}',
-                                      label: 'Rooms',
+                                    const SizedBox(width: 8),
+                                    _HeaderChip(
+                                      label: uni.location,
+                                      icon: Icons.location_on_outlined,
                                     ),
                                   ],
                                 ),
@@ -279,21 +258,65 @@ class _UniversityProfileScreenState extends State<UniversityProfileScreen>
 
               // ── Content ──
               SliverToBoxAdapter(
-                child: Column(
-                  children: [
-                    // ── Section Tabs ──
-                    _buildSectionTabs(),
-
-                    // ── Active Section Content ──
-                    AnimatedSwitcher(
-                      duration: const Duration(milliseconds: 300),
-                      transitionBuilder: (child, animation) =>
-                          FadeTransition(opacity: animation, child: child),
-                      child: _buildActiveSection(),
-                    ),
-
-                    const SizedBox(height: 100),
-                  ],
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 24, 16, 60),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'Quick Actions',
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w700,
+                          color: Color(0xFF0D1147),
+                          letterSpacing: 0.2,
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      _buildActionTile(
+                        icon: Icons.school_rounded,
+                        label: 'Students',
+                        sub: 'View all registered students',
+                        color: const Color(0xFF1A1F71),
+                        onTap: () => widget.onTabSelect?.call(2),
+                      ),
+                      const SizedBox(height: 10),
+                      _buildActionTile(
+                        icon: Icons.apartment_rounded,
+                        label: 'Landlords',
+                        sub: 'Manage registered landlords',
+                        color: const Color(0xFF7B2FF7),
+                        onTap: () => widget.onTabSelect?.call(1),
+                      ),
+                      const SizedBox(height: 10),
+                      _buildActionTile(
+                        icon: Icons.person_add_rounded,
+                        label: 'Add Landlord',
+                        sub: 'Register a new landlord',
+                        color: const Color(0xFF006B4F),
+                        onTap: () async {
+                          await Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => const RegisterLandlordScreen(),
+                            ),
+                          );
+                          if (mounted) widget.onUpdate?.call();
+                        },
+                      ),
+                      const SizedBox(height: 10),
+                      _buildActionTile(
+                        icon: Icons.logout_rounded,
+                        label: 'Log Out',
+                        sub: _isLoggingOut
+                            ? 'Signing out...'
+                            : 'Sign out of your account',
+                        color: Colors.red,
+                        isLoading: _isLoggingOut,
+                        onTap: _confirmLogout,
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ],
@@ -467,7 +490,7 @@ class _UniversityProfileScreenState extends State<UniversityProfileScreen>
                         ? UniversityStore.occupiedRooms /
                             UniversityStore.totalRooms
                         : 0,
-                    backgroundColor: Colors.white.withOpacity(0.2),
+                    backgroundColor: Colors.white.withValues(alpha: 0.2),
                     valueColor: const AlwaysStoppedAnimation<Color>(
                         Color(0xFF00C48C)),
                     minHeight: 10,
@@ -495,7 +518,7 @@ class _UniversityProfileScreenState extends State<UniversityProfileScreen>
               borderRadius: BorderRadius.circular(16),
               boxShadow: [
                 BoxShadow(
-                    color: Colors.black.withOpacity(0.04),
+                    color: Colors.black.withValues(alpha: 0.04),
                     blurRadius: 10,
                     offset: const Offset(0, 3)),
               ],
@@ -857,16 +880,18 @@ class _UniversityProfileScreenState extends State<UniversityProfileScreen>
                           await AuthService.resetPasswordUniversity(
                             newPassword: newCtrl.text,
                           );
+                          if (!mounted) return;
                           if (ctx.mounted) {
                             Navigator.pop(ctx);
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(
-                                content: Text('Password updated successfully!'),
-                                backgroundColor: Color(0xFF00C48C),
-                              ),
-                            );
                           }
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('Password updated successfully!'),
+                              backgroundColor: Color(0xFF00C48C),
+                            ),
+                          );
                         } on DioException catch (e) {
+                          if (!mounted) return;
                           final message = e.response?.data['message'] ?? 'Failed to update password';
                           ScaffoldMessenger.of(context).showSnackBar(
                             SnackBar(content: Text(message), backgroundColor: Colors.red),
@@ -906,10 +931,82 @@ class _UniversityProfileScreenState extends State<UniversityProfileScreen>
 
   Widget _sectionPad({required Widget child, double bottom = 0}) =>
       Padding(
-        padding:
-            EdgeInsets.fromLTRB(16, 0, 16, bottom),
+        padding: EdgeInsets.fromLTRB(16, 0, 16, bottom),
         child: child,
       );
+
+  Widget _buildActionTile({
+    required IconData icon,
+    required String label,
+    required String sub,
+    required Color color,
+    bool isLoading = false,
+    required VoidCallback onTap,
+  }) {
+    return GestureDetector(
+      onTap: isLoading ? null : onTap,
+      child: Container(
+        padding:
+            const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(14),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.04),
+              blurRadius: 8,
+              offset: const Offset(0, 2),
+            ),
+          ],
+        ),
+        child: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: color.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Icon(icon, color: color, size: 20),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    label,
+                    style: const TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w700,
+                      color: Color(0xFF0D1147),
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    sub,
+                    style: TextStyle(
+                        fontSize: 12, color: Colors.grey.shade500),
+                  ),
+                ],
+              ),
+            ),
+            isLoading
+                ? const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: Colors.red,
+                    ),
+                  )
+                : Icon(Icons.chevron_right,
+                    color: Colors.grey.shade300, size: 20),
+          ],
+        ),
+      ),
+    );
+  }
 }
 
 // ─── Card Widgets ─────────────────────────────────────────────────────────────
@@ -926,7 +1023,7 @@ class _StudentProfileCard extends StatelessWidget {
           borderRadius: BorderRadius.circular(14),
           boxShadow: [
             BoxShadow(
-                color: Colors.black.withOpacity(0.04),
+                color: Colors.black.withValues(alpha: 0.04),
                 blurRadius: 8,
                 offset: const Offset(0, 2)),
           ],
@@ -936,7 +1033,7 @@ class _StudentProfileCard extends StatelessWidget {
             CircleAvatar(
               radius: 22,
               backgroundColor:
-                  const Color(0xFF1A1F71).withOpacity(0.1),
+                  const Color(0xFF1A1F71).withValues(alpha: 0.1),
               child: Text(student.initials,
                   style: const TextStyle(
                       color: Color(0xFF1A1F71),
@@ -973,7 +1070,7 @@ class _StudentProfileCard extends StatelessWidget {
                       horizontal: 8, vertical: 3),
                   decoration: BoxDecoration(
                     color: student.hasBooking
-                        ? const Color(0xFF00C48C).withOpacity(0.1)
+                        ? const Color(0xFF00C48C).withValues(alpha: 0.1)
                         : Colors.grey.shade100,
                     borderRadius: BorderRadius.circular(20),
                   ),
@@ -1026,7 +1123,7 @@ class _LandlordProfileCard extends StatelessWidget {
           borderRadius: BorderRadius.circular(14),
           boxShadow: [
             BoxShadow(
-                color: Colors.black.withOpacity(0.04),
+                color: Colors.black.withValues(alpha: 0.04),
                 blurRadius: 8,
                 offset: const Offset(0, 2)),
           ],
@@ -1039,7 +1136,7 @@ class _LandlordProfileCard extends StatelessWidget {
                 CircleAvatar(
                   radius: 22,
                   backgroundColor:
-                      const Color(0xFF7B2FF7).withOpacity(0.1),
+                      const Color(0xFF7B2FF7).withValues(alpha: 0.1),
                   child: Text(landlord.initials,
                       style: const TextStyle(
                           color: Color(0xFF7B2FF7),
@@ -1067,7 +1164,7 @@ class _LandlordProfileCard extends StatelessWidget {
                   padding: const EdgeInsets.symmetric(
                       horizontal: 8, vertical: 3),
                   decoration: BoxDecoration(
-                    color: _statusColor.withOpacity(0.1),
+                    color: _statusColor.withValues(alpha: 0.1),
                     borderRadius: BorderRadius.circular(20),
                   ),
                   child: Text(landlord.statusLabel,
@@ -1126,7 +1223,7 @@ class _HostelProfileCard extends StatelessWidget {
           borderRadius: BorderRadius.circular(16),
           boxShadow: [
             BoxShadow(
-                color: Colors.black.withOpacity(0.04),
+                color: Colors.black.withValues(alpha: 0.04),
                 blurRadius: 8,
                 offset: const Offset(0, 2)),
           ],
@@ -1297,7 +1394,7 @@ class _InfoCard extends StatelessWidget {
           borderRadius: BorderRadius.circular(16),
           boxShadow: [
             BoxShadow(
-                color: Colors.black.withOpacity(0.04),
+                color: Colors.black.withValues(alpha: 0.04),
                 blurRadius: 10,
                 offset: const Offset(0, 3)),
           ],
@@ -1378,7 +1475,7 @@ class _SettingsGroup extends StatelessWidget {
               borderRadius: BorderRadius.circular(16),
               boxShadow: [
                 BoxShadow(
-                    color: Colors.black.withOpacity(0.04),
+                    color: Colors.black.withValues(alpha: 0.04),
                     blurRadius: 10,
                     offset: const Offset(0, 3)),
               ],
@@ -1399,7 +1496,7 @@ class _SettingsGroup extends StatelessWidget {
                             Container(
                               padding: const EdgeInsets.all(8),
                               decoration: BoxDecoration(
-                                color: item.color.withOpacity(0.1),
+                                color: item.color.withValues(alpha: 0.1),
                                 borderRadius: BorderRadius.circular(10),
                               ),
                               child: Icon(item.icon,
@@ -1473,10 +1570,10 @@ class _HeaderChip extends StatelessWidget {
         padding:
             const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
         decoration: BoxDecoration(
-          color: Colors.white.withOpacity(0.15),
+          color: Colors.white.withValues(alpha: 0.15),
           borderRadius: BorderRadius.circular(20),
           border:
-              Border.all(color: Colors.white.withOpacity(0.2)),
+              Border.all(color: Colors.white.withValues(alpha: 0.2)),
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
@@ -1519,7 +1616,7 @@ class _VertDivider extends StatelessWidget {
   Widget build(BuildContext context) => Container(
         width: 1,
         height: 30,
-        color: Colors.white.withOpacity(0.2),
+        color: Colors.white.withValues(alpha: 0.2),
       );
 }
 
@@ -1559,9 +1656,9 @@ class _SummaryChip extends StatelessWidget {
           padding:
               const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
           decoration: BoxDecoration(
-            color: color.withOpacity(0.08),
+            color: color.withValues(alpha: 0.08),
             borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: color.withOpacity(0.2)),
+            border: Border.all(color: color.withValues(alpha: 0.2)),
           ),
           child: Column(
             children: [

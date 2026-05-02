@@ -1,11 +1,10 @@
 // landlord_bookings_screen.dart
-// Bookings are derived from the landlord's hostels (GET /landlord/hostels).
-// Each hostel returns rooms; rooms contain booking/occupancy data.
-// When a dedicated landlord bookings endpoint becomes available in the API,
-// replace _loadData() with a single GET /landlord/bookings call.
+// Two tabs: Active (booked rooms) and Terminated (ended bookings).
+// Terminate action is directly on the card for active bookings.
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:dio/dio.dart';
 import 'landlord_models.dart';
 
 class LandlordBookingsScreen extends StatefulWidget {
@@ -20,21 +19,14 @@ class LandlordBookingsScreen extends StatefulWidget {
 class _LandlordBookingsScreenState extends State<LandlordBookingsScreen>
     with SingleTickerProviderStateMixin {
   late TabController _tabController;
-  String _searchQuery = '';
-  final _searchController = TextEditingController();
-
   bool _isLoading = false;
+  String? _terminatingBookingId;
   String? _errorMessage;
-
-  final List<String> _tabs = [
-    'All', 'Pending', 'Active', 'Completed', 'Cancelled'
-  ];
 
   @override
   void initState() {
     super.initState();
-    _tabController =
-        TabController(length: _tabs.length, vsync: this);
+    _tabController = TabController(length: 2, vsync: this);
     _tabController.addListener(() => setState(() {}));
     _loadData();
   }
@@ -42,11 +34,8 @@ class _LandlordBookingsScreenState extends State<LandlordBookingsScreen>
   @override
   void dispose() {
     _tabController.dispose();
-    _searchController.dispose();
     super.dispose();
   }
-
-  // ── Data loading ──────────────────────────────────────────────────────────
 
   Future<void> _loadData() async {
     if (_isLoading) return;
@@ -54,18 +43,13 @@ class _LandlordBookingsScreenState extends State<LandlordBookingsScreen>
       _isLoading = true;
       _errorMessage = null;
     });
-
     try {
-      // Refresh hostels from API; bookings are embedded per-hostel.
-      // Re-use the already-loaded LandlordStore.bookings if available.
-      // If the store is empty (e.g. direct navigation), fetch fresh.
-      if (LandlordStore.bookings.isEmpty) {
-        final hostels = await ApiService.fetchMyHostels();
-        LandlordStore.setHostels(hostels);
-        // Extract bookings from occupancy data if API embeds them.
-        // Currently the API returns rooms with occupiedSlots but no
-        // student-level booking objects. We show what the store has.
-      }
+      // Hostels must be fetched first — their IDs are used for the
+      // per-hostel bookings endpoint.
+      final hostels = await ApiService.fetchMyHostels();
+      LandlordStore.setHostels(hostels);
+      final bookings = await ApiService.fetchAllBookings(hostels);
+      LandlordStore.setBookings(bookings);
     } catch (e) {
       setState(() => _errorMessage = _friendlyError(e));
     } finally {
@@ -86,35 +70,15 @@ class _LandlordBookingsScreenState extends State<LandlordBookingsScreen>
     return 'Could not load bookings. Pull down to retry.';
   }
 
-  // ── Filtering ─────────────────────────────────────────────────────────────
+  List<LandlordBooking> get _activeBookings => LandlordStore.bookings
+      .where((b) => b.status == BookingStatusEnum.active)
+      .toList();
 
-  List<LandlordBooking> get _filteredBookings {
-    var bookings = LandlordStore.bookings;
-
-    final tab = _tabs[_tabController.index];
-    if (tab != 'All') {
-      final statusMap = {
-        'Pending': BookingStatusEnum.pending,
-        'Active': BookingStatusEnum.active,
-        'Completed': BookingStatusEnum.completed,
-        'Cancelled': BookingStatusEnum.cancelled,
-      };
-      bookings =
-          bookings.where((b) => b.status == statusMap[tab]).toList();
-    }
-
-    if (_searchQuery.isNotEmpty) {
-      final q = _searchQuery.toLowerCase();
-      bookings = bookings
-          .where((b) =>
-              b.studentName.toLowerCase().contains(q) ||
-              b.hostelName.toLowerCase().contains(q) ||
-              b.id.toLowerCase().contains(q))
-          .toList();
-    }
-
-    return bookings;
-  }
+  List<LandlordBooking> get _terminatedBookings => LandlordStore.bookings
+      .where((b) =>
+          b.status == BookingStatusEnum.cancelled ||
+          b.status == BookingStatusEnum.completed)
+      .toList();
 
   String _formatUGX(double v) {
     if (v >= 1000000) return 'UGX ${(v / 1000000).toStringAsFixed(2)}M';
@@ -130,7 +94,60 @@ class _LandlordBookingsScreenState extends State<LandlordBookingsScreen>
     return '${d.day} ${m[d.month - 1]} ${d.year}';
   }
 
-  // ── Build ─────────────────────────────────────────────────────────────────
+  Future<void> _confirmTerminate(LandlordBooking booking) async {
+    if (_terminatingBookingId == booking.id) return;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Terminate Booking'),
+        content: Text(
+          "Terminate ${booking.studentName}'s booking at ${booking.hostelName}?",
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: TextButton.styleFrom(foregroundColor: Colors.red),
+            child: const Text('Terminate'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed == true && mounted) {
+      try {
+        setState(() => _terminatingBookingId = booking.id);
+        await ApiService.terminateBooking(
+          hostelId: booking.hostelId,
+          bookingId: booking.id,
+        );
+        LandlordStore.updateBookingStatus(
+            booking.id, BookingStatusEnum.completed);
+        if (!mounted) return;
+        setState(() {});
+        widget.onUpdate?.call();
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Booking terminated successfully'),
+          ),
+        );
+        await _loadData();
+      } catch (e) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(_friendlyError(e)),
+          ),
+        );
+      } finally {
+        if (mounted) {
+          setState(() => _terminatingBookingId = null);
+        }
+      }
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -145,7 +162,7 @@ class _LandlordBookingsScreenState extends State<LandlordBookingsScreen>
             backgroundColor: const Color(0xFF006B4F),
             systemOverlayStyle: SystemUiOverlayStyle.light,
             automaticallyImplyLeading: false,
-            expandedHeight: 140,
+            expandedHeight: 108,
             flexibleSpace: FlexibleSpaceBar(
               background: Container(
                 decoration: const BoxDecoration(
@@ -155,41 +172,19 @@ class _LandlordBookingsScreenState extends State<LandlordBookingsScreen>
                 ),
                 child: SafeArea(
                   child: Padding(
-                    padding: const EdgeInsets.fromLTRB(20, 16, 20, 60),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    padding: const EdgeInsets.fromLTRB(20, 14, 20, 52),
+                    child: const Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text('Bookings',
-                                style: TextStyle(
-                                    color: Colors.white,
-                                    fontSize: 22,
-                                    fontWeight: FontWeight.w800)),
-                            Text('Manage student bookings',
-                                style: TextStyle(
-                                    color: Colors.white70,
-                                    fontSize: 13)),
-                          ],
-                        ),
-                        Row(
-                          children: [
-                            _HeaderBadge(
-                              label:
-                                  '${LandlordStore.pendingBookings}',
-                              sublabel: 'Pending',
-                              color: const Color(0xFFFF9800),
-                            ),
-                            const SizedBox(width: 8),
-                            _HeaderBadge(
-                              label:
-                                  '${LandlordStore.activeBookings}',
-                              sublabel: 'Active',
-                              color: const Color(0xFF00C48C),
-                            ),
-                          ],
-                        ),
+                        Text('Bookings',
+                            style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 20,
+                                fontWeight: FontWeight.w800)),
+                        SizedBox(height: 2),
+                        Text('Student bookings on your properties',
+                            style: TextStyle(
+                                color: Colors.white70, fontSize: 12)),
                       ],
                     ),
                   ),
@@ -197,119 +192,44 @@ class _LandlordBookingsScreenState extends State<LandlordBookingsScreen>
               ),
             ),
             bottom: PreferredSize(
-              preferredSize: const Size.fromHeight(48),
+              preferredSize: const Size.fromHeight(46),
               child: Container(
                 color: Colors.white,
                 child: TabBar(
                   controller: _tabController,
                   labelColor: const Color(0xFF006B4F),
-                  unselectedLabelColor: Colors.grey.shade500,
+                  unselectedLabelColor: Colors.grey.shade400,
                   labelStyle: const TextStyle(
-                      fontWeight: FontWeight.w700, fontSize: 12),
+                      fontWeight: FontWeight.w700, fontSize: 13),
+                  unselectedLabelStyle: const TextStyle(
+                      fontWeight: FontWeight.w500, fontSize: 13),
                   indicatorColor: const Color(0xFF006B4F),
                   indicatorWeight: 3,
-                  isScrollable: true,
-                  tabs: _tabs.map((t) {
-                    final count = t == 'All'
-                        ? LandlordStore.bookings.length
-                        : LandlordStore.bookings
-                            .where((b) =>
-                                b.statusLabel.toLowerCase() ==
-                                t.toLowerCase())
-                            .length;
-                    return Tab(
-                      child: Row(
-                        children: [
-                          Text(t),
-                          if (count > 0) ...[
-                            const SizedBox(width: 4),
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                  horizontal: 5, vertical: 1),
-                              decoration: BoxDecoration(
-                                color: const Color(0xFF006B4F)
-                                    .withOpacity(0.1),
-                                borderRadius:
-                                    BorderRadius.circular(10),
-                              ),
-                              child: Text('$count',
-                                  style: const TextStyle(
-                                      fontSize: 10,
-                                      fontWeight: FontWeight.w700,
-                                      color: Color(0xFF006B4F))),
-                            ),
-                          ],
-                        ],
-                      ),
-                    );
-                  }).toList(),
+                  tabs: const [
+                    Tab(text: 'Active'),
+                    Tab(text: 'Terminated'),
+                  ],
                 ),
               ),
             ),
           ),
         ],
-        body: Column(
-          children: [
-            // Search bar
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
-              child: TextField(
-                controller: _searchController,
-                onChanged: (v) => setState(() => _searchQuery = v),
-                decoration: InputDecoration(
-                  hintText:
-                      'Search by student, hostel or booking ID…',
-                  hintStyle: TextStyle(
-                      fontSize: 13, color: Colors.grey.shade400),
-                  prefixIcon: const Icon(Icons.search,
-                      size: 18, color: Colors.grey),
-                  suffixIcon: _searchQuery.isNotEmpty
-                      ? GestureDetector(
-                          onTap: () {
-                            _searchController.clear();
-                            setState(() => _searchQuery = '');
-                          },
-                          child: const Icon(Icons.close,
-                              size: 16, color: Colors.grey),
-                        )
-                      : null,
-                  filled: true,
-                  fillColor: Colors.white,
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide: BorderSide(color: Colors.grey.shade200),
+        body: _isLoading
+            ? const Center(
+                child: CircularProgressIndicator(color: Color(0xFF006B4F)))
+            : _errorMessage != null
+                ? _buildError()
+                : RefreshIndicator(
+                    onRefresh: _loadData,
+                    color: const Color(0xFF006B4F),
+                    child: TabBarView(
+                      controller: _tabController,
+                      children: [
+                        _buildList(_activeBookings, isActive: true),
+                        _buildList(_terminatedBookings, isActive: false),
+                      ],
+                    ),
                   ),
-                  enabledBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide: BorderSide(color: Colors.grey.shade200),
-                  ),
-                  focusedBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide: const BorderSide(
-                        color: Color(0xFF006B4F), width: 1.5),
-                  ),
-                  contentPadding: const EdgeInsets.symmetric(
-                      horizontal: 14, vertical: 12),
-                ),
-              ),
-            ),
-
-            // Body
-            Expanded(
-              child: _isLoading
-                  ? const Center(
-                      child: CircularProgressIndicator(
-                          color: Color(0xFF006B4F)))
-                  : _errorMessage != null
-                      ? _buildError()
-                      : RefreshIndicator(
-                          onRefresh: _loadData,
-                          color: const Color(0xFF006B4F),
-                          child: _buildList(),
-                        ),
-            ),
-          ],
-        ),
       ),
     );
   }
@@ -326,8 +246,8 @@ class _LandlordBookingsScreenState extends State<LandlordBookingsScreen>
             const SizedBox(height: 12),
             Text(_errorMessage!,
                 textAlign: TextAlign.center,
-                style: TextStyle(
-                    color: Colors.grey.shade500, fontSize: 14)),
+                style:
+                    TextStyle(color: Colors.grey.shade500, fontSize: 14)),
             const SizedBox(height: 16),
             GestureDetector(
               onTap: _loadData,
@@ -350,8 +270,8 @@ class _LandlordBookingsScreenState extends State<LandlordBookingsScreen>
     );
   }
 
-  Widget _buildList() {
-    final bookings = _filteredBookings;
+  Widget _buildList(List<LandlordBooking> bookings,
+      {required bool isActive}) {
     if (bookings.isEmpty) {
       return ListView(
         children: [
@@ -360,12 +280,21 @@ class _LandlordBookingsScreenState extends State<LandlordBookingsScreen>
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Icon(Icons.inbox_outlined,
-                    size: 56, color: Colors.grey.shade300),
+                Icon(
+                  isActive
+                      ? Icons.apartment_outlined
+                      : Icons.do_not_disturb_alt_outlined,
+                  size: 56,
+                  color: Colors.grey.shade300,
+                ),
                 const SizedBox(height: 12),
-                Text('No bookings found',
-                    style: TextStyle(
-                        color: Colors.grey.shade400, fontSize: 15)),
+                Text(
+                  isActive
+                      ? 'No active bookings'
+                      : 'No terminated bookings',
+                  style: TextStyle(
+                      color: Colors.grey.shade400, fontSize: 15),
+                ),
               ],
             ),
           ),
@@ -373,590 +302,258 @@ class _LandlordBookingsScreenState extends State<LandlordBookingsScreen>
       );
     }
     return ListView.separated(
-      padding: const EdgeInsets.fromLTRB(16, 8, 16, 100),
+      padding: const EdgeInsets.fromLTRB(16, 14, 16, 100),
       itemCount: bookings.length,
-      separatorBuilder: (_, __) => const SizedBox(height: 10),
-      itemBuilder: (_, i) => _BookingCard(
+      separatorBuilder: (_, __) => const SizedBox(height: 12),
+      itemBuilder: (_, i) => _BookingHostelCard(
         booking: bookings[i],
-        formatUGX: _formatUGX,
+        isActive: isActive,
         formatDate: _formatDate,
-        onTap: () => _showBookingDetail(bookings[i]),
-      ),
-    );
-  }
-
-  void _showBookingDetail(LandlordBooking booking) {
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (_) => _BookingDetailSheet(
-        booking: booking,
         formatUGX: _formatUGX,
-        formatDate: _formatDate,
-        onStatusUpdate: (status) {
-          LandlordStore.updateBookingStatus(booking.id, status);
-          setState(() {});
-          widget.onUpdate?.call();
-          Navigator.pop(context);
-        },
+        isTerminating: _terminatingBookingId == bookings[i].id,
+        onTerminate: isActive ? () => _confirmTerminate(bookings[i]) : null,
       ),
     );
   }
 }
 
-// ─── Booking Card ─────────────────────────────────────────────────────────────
+// ─── Booking Hostel Card ──────────────────────────────────────────────────────
 
-class _BookingCard extends StatelessWidget {
+class _BookingHostelCard extends StatelessWidget {
   final LandlordBooking booking;
-  final String Function(double) formatUGX;
+  final bool isActive;
+  final bool isTerminating;
   final String Function(DateTime) formatDate;
-  final VoidCallback onTap;
+  final String Function(double) formatUGX;
+  final VoidCallback? onTerminate;
 
-  const _BookingCard({
+  const _BookingHostelCard({
     required this.booking,
-    required this.formatUGX,
+    required this.isActive,
+    required this.isTerminating,
     required this.formatDate,
-    required this.onTap,
+    required this.formatUGX,
+    this.onTerminate,
   });
-
-  Color get _statusColor {
-    switch (booking.status) {
-      case BookingStatusEnum.pending:   return const Color(0xFFFF9800);
-      case BookingStatusEnum.confirmed: return const Color(0xFF1A1F71);
-      case BookingStatusEnum.active:    return const Color(0xFF00C48C);
-      case BookingStatusEnum.completed: return Colors.grey;
-      case BookingStatusEnum.cancelled: return Colors.red;
-    }
-  }
-
-  Color get _paymentColor {
-    switch (booking.paymentStatus) {
-      case PaymentStatusEnum.pending: return const Color(0xFFFF9800);
-      case PaymentStatusEnum.partial: return const Color(0xFF1A1F71);
-      case PaymentStatusEnum.paid:    return const Color(0xFF00C48C);
-    }
-  }
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.all(14),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(16),
-          boxShadow: [
-            BoxShadow(
-                color: Colors.black.withOpacity(0.04),
-                blurRadius: 8,
-                offset: const Offset(0, 2)),
-          ],
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Header row
-            Row(
-              children: [
-                CircleAvatar(
-                  radius: 24,
-                  backgroundColor:
-                      const Color(0xFF006B4F).withOpacity(0.1),
-                  child: Text(
-                    _initials(booking.studentName),
-                    style: const TextStyle(
-                        color: Color(0xFF006B4F),
-                        fontWeight: FontWeight.w800,
-                        fontSize: 14),
+    final hostel = LandlordStore.hostels
+        .where((h) => h.id == booking.hostelId)
+        .firstOrNull;
+    final imageUrl =
+        (hostel?.imageUrls.isNotEmpty == true) ? hostel!.imageUrls.first : null;
+
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.05),
+            blurRadius: 10,
+            offset: const Offset(0, 3),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // ── Image + overlay buttons ──────────────────────────────────
+          Stack(
+            children: [
+              ClipRRect(
+                borderRadius:
+                    const BorderRadius.vertical(top: Radius.circular(16)),
+                child: imageUrl != null
+                    ? Image.network(
+                        imageUrl,
+                        height: 130,
+                        width: double.infinity,
+                        fit: BoxFit.cover,
+                        errorBuilder: (_, __, ___) => _placeholder(),
+                      )
+                    : _placeholder(),
+              ),
+              // Status badge – top left (terminated only)
+              if (!isActive)
+                Positioned(
+                  top: 10,
+                  left: 10,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 10, vertical: 5),
+                    decoration: BoxDecoration(
+                      color: Colors.grey.shade600,
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: const Text(
+                      'Terminated',
+                      style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600),
+                    ),
                   ),
                 ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(booking.studentName,
-                          style: const TextStyle(
-                              fontWeight: FontWeight.w700,
-                              fontSize: 15,
-                              color: Color(0xFF0D1147))),
-                      Text(
-                        '${booking.university} · ${booking.studentId}',
-                        style: TextStyle(
-                            fontSize: 11,
-                            color: Colors.grey.shade500),
-                        overflow: TextOverflow.ellipsis,
+              // Terminate button – top right (active only)
+              if (isActive && onTerminate != null)
+                Positioned(
+                  top: 10,
+                  right: 10,
+                  child: GestureDetector(
+                    onTap: isTerminating ? null : onTerminate,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 10, vertical: 5),
+                      decoration: BoxDecoration(
+                        color: isTerminating
+                            ? Colors.red.withValues(alpha: 0.8)
+                            : Colors.red,
+                        borderRadius: BorderRadius.circular(20),
                       ),
-                    ],
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          if (isTerminating) ...[
+                            const SizedBox(
+                              width: 13,
+                              height: 13,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                valueColor: AlwaysStoppedAnimation<Color>(
+                                    Colors.white),
+                              ),
+                            ),
+                            const SizedBox(width: 6),
+                            const Text('Terminating',
+                                style: TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w600)),
+                          ] else ...[
+                            const Icon(Icons.stop_circle_outlined,
+                                color: Colors.white, size: 13),
+                            const SizedBox(width: 4),
+                            const Text('Terminate',
+                                style: TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w600)),
+                          ],
+                        ],
+                      ),
+                    ),
                   ),
                 ),
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.end,
+            ],
+          ),
+
+          // ── Card body ────────────────────────────────────────────────
+          Padding(
+            padding: const EdgeInsets.all(14),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  booking.hostelName,
+                  style: const TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w700,
+                      color: Color(0xFF0D1147)),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                const SizedBox(height: 6),
+                Row(
                   children: [
                     Container(
                       padding: const EdgeInsets.symmetric(
-                          horizontal: 9, vertical: 4),
+                          horizontal: 8, vertical: 3),
                       decoration: BoxDecoration(
-                        color: _statusColor.withOpacity(0.1),
-                        borderRadius: BorderRadius.circular(20),
+                        color: const Color(0xFF006B4F)
+                            .withValues(alpha: 0.08),
+                        borderRadius: BorderRadius.circular(8),
                       ),
-                      child: Text(booking.statusLabel,
-                          style: TextStyle(
-                              color: _statusColor,
-                              fontSize: 10,
-                              fontWeight: FontWeight.w700)),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(booking.id,
-                        style: TextStyle(
-                            fontSize: 10,
-                            color: Colors.grey.shade400)),
-                  ],
-                ),
-              ],
-            ),
-
-            const SizedBox(height: 12),
-            const Divider(height: 1),
-            const SizedBox(height: 10),
-
-            Row(
-              children: [
-                const Icon(Icons.apartment, size: 13, color: Colors.grey),
-                const SizedBox(width: 5),
-                Expanded(
-                  child: Text(
-                    '${booking.hostelName} · ${booking.roomType}',
-                    style: TextStyle(
-                        fontSize: 12, color: Colors.grey.shade600),
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 6),
-
-            Row(
-              children: [
-                const Icon(Icons.calendar_today,
-                    size: 12, color: Colors.grey),
-                const SizedBox(width: 5),
-                Text(
-                  'Booked: ${formatDate(booking.bookedAt)}',
-                  style: TextStyle(
-                      fontSize: 12, color: Colors.grey.shade600),
-                ),
-              ],
-            ),
-
-            const SizedBox(height: 12),
-
-            // Payment progress
-            Row(
-              children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        mainAxisAlignment:
-                            MainAxisAlignment.spaceBetween,
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
                         children: [
-                          Text('Payment Progress',
-                              style: TextStyle(
-                                  fontSize: 11,
-                                  color: Colors.grey.shade500)),
+                          const Icon(Icons.bed_outlined,
+                              size: 12, color: Color(0xFF006B4F)),
+                          const SizedBox(width: 4),
                           Text(
-                            '${(booking.paymentProgress * 100).toStringAsFixed(0)}%',
-                            style: TextStyle(
+                            booking.roomType,
+                            style: const TextStyle(
                                 fontSize: 11,
-                                fontWeight: FontWeight.w700,
-                                color: _paymentColor),
+                                color: Color(0xFF006B4F),
+                                fontWeight: FontWeight.w600),
                           ),
                         ],
                       ),
-                      const SizedBox(height: 4),
-                      ClipRRect(
-                        borderRadius: BorderRadius.circular(4),
-                        child: LinearProgressIndicator(
-                          value: booking.paymentProgress,
-                          backgroundColor: Colors.grey.shade100,
-                          valueColor: AlwaysStoppedAnimation<Color>(
-                              _paymentColor),
-                          minHeight: 6,
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      Row(
-                        mainAxisAlignment:
-                            MainAxisAlignment.spaceBetween,
-                        children: [
-                          Text('Paid: ${formatUGX(booking.amountPaid)}',
-                              style: TextStyle(
-                                  fontSize: 10,
-                                  color: Colors.grey.shade500)),
-                          Text(
-                            'Total: ${formatUGX(booking.totalAmount)}',
-                            style: TextStyle(
-                                fontSize: 10,
-                                color: Colors.grey.shade500),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      formatUGX(booking.monthlyAmount),
+                      style: const TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                          color: Color(0xFF006B4F)),
+                    ),
+                  ],
                 ),
-                const SizedBox(width: 12),
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.end,
+                const SizedBox(height: 10),
+                Divider(height: 1, color: Colors.grey.shade100),
+                const SizedBox(height: 10),
+                Row(
                   children: [
-                    Text(formatUGX(booking.monthlyAmount),
+                    CircleAvatar(
+                      radius: 14,
+                      backgroundColor: const Color(0xFF1A1F71)
+                          .withValues(alpha: 0.08),
+                      child: Text(
+                        _initials(booking.studentName),
                         style: const TextStyle(
-                            fontWeight: FontWeight.w800,
-                            fontSize: 15,
-                            color: Color(0xFF006B4F))),
-                    Text('/semester',
-                        style: TextStyle(
                             fontSize: 10,
-                            color: Colors.grey.shade400)),
+                            fontWeight: FontWeight.w700,
+                            color: Color(0xFF1A1F71)),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        booking.studentName,
+                        style: const TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                            color: Color(0xFF0D1147)),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    Text(
+                      'Booked ${formatDate(booking.bookedAt)}',
+                      style: TextStyle(
+                          fontSize: 11, color: Colors.grey.shade400),
+                    ),
                   ],
                 ),
               ],
             ),
-
-            if (booking.terminationRequested) ...[
-              const SizedBox(height: 10),
-              Container(
-                padding: const EdgeInsets.symmetric(
-                    horizontal: 10, vertical: 6),
-                decoration: BoxDecoration(
-                  color: Colors.red.shade50,
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: Colors.red.shade200),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(Icons.exit_to_app,
-                        size: 13, color: Colors.red.shade600),
-                    const SizedBox(width: 6),
-                    Text('Termination requested',
-                        style: TextStyle(
-                            fontSize: 11,
-                            color: Colors.red.shade600,
-                            fontWeight: FontWeight.w600)),
-                  ],
-                ),
-              ),
-            ],
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
+
+  Widget _placeholder() => Container(
+        height: 130,
+        width: double.infinity,
+        color: const Color(0xFF006B4F).withValues(alpha: 0.08),
+        child: const Center(
+          child: Icon(Icons.apartment_rounded,
+              size: 40, color: Color(0xFF006B4F)),
+        ),
+      );
 
   String _initials(String name) =>
       name.split(' ').map((w) => w.isNotEmpty ? w[0] : '').take(2).join();
-}
-
-// ─── Booking Detail Sheet ──────────────────────────────────────────────────────
-
-class _BookingDetailSheet extends StatelessWidget {
-  final LandlordBooking booking;
-  final String Function(double) formatUGX;
-  final String Function(DateTime) formatDate;
-  final Function(BookingStatusEnum) onStatusUpdate;
-
-  const _BookingDetailSheet({
-    required this.booking,
-    required this.formatUGX,
-    required this.formatDate,
-    required this.onStatusUpdate,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      decoration: const BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-      ),
-      padding: const EdgeInsets.fromLTRB(24, 12, 24, 34),
-      child: SingleChildScrollView(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Center(
-              child: Container(
-                width: 40,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: Colors.grey.shade300,
-                  borderRadius: BorderRadius.circular(2),
-                ),
-              ),
-            ),
-            const SizedBox(height: 20),
-
-            // Student info
-            Row(
-              children: [
-                CircleAvatar(
-                  radius: 28,
-                  backgroundColor:
-                      const Color(0xFF006B4F).withOpacity(0.1),
-                  child: Text(
-                    booking.studentName
-                        .split(' ')
-                        .map((w) => w.isNotEmpty ? w[0] : '')
-                        .take(2)
-                        .join(),
-                    style: const TextStyle(
-                        color: Color(0xFF006B4F),
-                        fontWeight: FontWeight.w800,
-                        fontSize: 16),
-                  ),
-                ),
-                const SizedBox(width: 14),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(booking.studentName,
-                          style: const TextStyle(
-                              fontWeight: FontWeight.w800,
-                              fontSize: 17,
-                              color: Color(0xFF0D1147))),
-                      Text(booking.university,
-                          style: TextStyle(
-                              fontSize: 13,
-                              color: Colors.grey.shade500)),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-
-            const SizedBox(height: 20),
-            const Divider(),
-            const SizedBox(height: 14),
-
-            _DetailRow2(label: 'Booking ID', value: booking.id),
-            _DetailRow2(label: 'Student ID', value: booking.studentId),
-            if (booking.studentPhone.isNotEmpty)
-              _DetailRow2(
-                  label: 'Phone',
-                  value: booking.studentPhone,
-                  isLink: true),
-            if (booking.studentEmail.isNotEmpty)
-              _DetailRow2(
-                  label: 'Email',
-                  value: booking.studentEmail,
-                  isLink: true),
-            _DetailRow2(label: 'Hostel', value: booking.hostelName),
-            _DetailRow2(
-                label: 'Room Type', value: booking.roomType),
-            _DetailRow2(
-                label: 'Booked On',
-                value: formatDate(booking.bookedAt)),
-            if (booking.paymentMethod.isNotEmpty)
-              _DetailRow2(
-                  label: 'Payment Method',
-                  value: booking.paymentMethod),
-            _DetailRow2(
-                label: 'Price',
-                value: formatUGX(booking.monthlyAmount),
-                highlight: true),
-            _DetailRow2(
-                label: 'Amount Paid',
-                value: formatUGX(booking.amountPaid),
-                highlight: true),
-            _DetailRow2(
-                label: 'Balance Due',
-                value: formatUGX(booking.balanceDue),
-                highlight: booking.balanceDue > 0),
-
-            const SizedBox(height: 20),
-
-            if (booking.status == BookingStatusEnum.pending) ...[
-              const Text('Actions',
-                  style: TextStyle(
-                      fontWeight: FontWeight.w700,
-                      fontSize: 14,
-                      color: Color(0xFF0D1147))),
-              const SizedBox(height: 10),
-              Row(
-                children: [
-                  Expanded(
-                    child: _ActionBtn(
-                      label: 'Confirm',
-                      color: const Color(0xFF00C48C),
-                      icon: Icons.check_circle_outline,
-                      onTap: () => onStatusUpdate(
-                          BookingStatusEnum.confirmed),
-                    ),
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: _ActionBtn(
-                      label: 'Decline',
-                      color: Colors.red,
-                      icon: Icons.cancel_outlined,
-                      onTap: () => onStatusUpdate(
-                          BookingStatusEnum.cancelled),
-                    ),
-                  ),
-                ],
-              ),
-            ],
-
-            if (booking.status == BookingStatusEnum.confirmed) ...[
-              _ActionBtn(
-                label: 'Mark as Active',
-                color: const Color(0xFF1A1F71),
-                icon: Icons.people_outline,
-                onTap: () =>
-                    onStatusUpdate(BookingStatusEnum.active),
-                fullWidth: true,
-              ),
-            ],
-
-            if (booking.terminationRequested &&
-                booking.status == BookingStatusEnum.active) ...[
-              const SizedBox(height: 12),
-              _ActionBtn(
-                label: 'Approve Termination',
-                color: Colors.orange,
-                icon: Icons.exit_to_app,
-                onTap: () =>
-                    onStatusUpdate(BookingStatusEnum.completed),
-                fullWidth: true,
-              ),
-            ],
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _DetailRow2 extends StatelessWidget {
-  final String label;
-  final String value;
-  final bool highlight;
-  final bool isLink;
-
-  const _DetailRow2({
-    required this.label,
-    required this.value,
-    this.highlight = false,
-    this.isLink = false,
-  });
-
-  @override
-  Widget build(BuildContext context) => Padding(
-        padding: const EdgeInsets.symmetric(vertical: 6),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Text(label,
-                style: TextStyle(
-                    fontSize: 13, color: Colors.grey.shade500)),
-            Flexible(
-              child: Text(value,
-                  style: TextStyle(
-                    fontSize: 13,
-                    fontWeight: highlight
-                        ? FontWeight.w700
-                        : FontWeight.w500,
-                    color: highlight
-                        ? const Color(0xFF006B4F)
-                        : isLink
-                            ? const Color(0xFF1A1F71)
-                            : const Color(0xFF0D1147),
-                    decoration: isLink ? TextDecoration.underline : null,
-                  ),
-                  overflow: TextOverflow.ellipsis),
-            ),
-          ],
-        ),
-      );
-}
-
-class _ActionBtn extends StatelessWidget {
-  final String label;
-  final Color color;
-  final IconData icon;
-  final VoidCallback onTap;
-  final bool fullWidth;
-
-  const _ActionBtn({
-    required this.label,
-    required this.color,
-    required this.icon,
-    required this.onTap,
-    this.fullWidth = false,
-  });
-
-  @override
-  Widget build(BuildContext context) => GestureDetector(
-        onTap: onTap,
-        child: Container(
-          width: fullWidth ? double.infinity : null,
-          padding: const EdgeInsets.symmetric(
-              vertical: 13, horizontal: 16),
-          decoration: BoxDecoration(
-            color: color.withOpacity(0.1),
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: color.withOpacity(0.3)),
-          ),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(icon, color: color, size: 16),
-              const SizedBox(width: 6),
-              Text(label,
-                  style: TextStyle(
-                      color: color,
-                      fontWeight: FontWeight.w700,
-                      fontSize: 13)),
-            ],
-          ),
-        ),
-      );
-}
-
-class _HeaderBadge extends StatelessWidget {
-  final String label;
-  final String sublabel;
-  final Color color;
-
-  const _HeaderBadge(
-      {required this.label,
-      required this.sublabel,
-      required this.color});
-
-  @override
-  Widget build(BuildContext context) => Container(
-        padding: const EdgeInsets.symmetric(
-            horizontal: 10, vertical: 6),
-        decoration: BoxDecoration(
-          color: Colors.white.withOpacity(0.15),
-          borderRadius: BorderRadius.circular(10),
-        ),
-        child: Column(
-          children: [
-            Text(label,
-                style: TextStyle(
-                    color: color,
-                    fontWeight: FontWeight.w800,
-                    fontSize: 16)),
-            Text(sublabel,
-                style: const TextStyle(
-                    color: Colors.white70, fontSize: 10)),
-          ],
-        ),
-      );
 }

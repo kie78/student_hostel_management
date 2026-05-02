@@ -1,8 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:clerk_flutter/clerk_flutter.dart';
-import 'package:student_hostel_management/screens/register_screen.dart';
-import 'screens/register_screen.dart';
+import 'package:student_hostel_management/screens/role_select_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -21,7 +20,8 @@ class HostelApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return ClerkAuth(
       config: ClerkAuthConfig(
-        publishableKey: 'pk_test_c2hhcnAtZ2F6ZWxsZS0yMy5jbGVyay5hY2NvdW50cy5kZXYk', // 🔥 your real key here
+        publishableKey:
+            'pk_test_c2hhcnAtZ2F6ZWxsZS0yMy5jbGVyay5hY2NvdW50cy5kZXYk', // 🔥 your real key here
       ),
       child: MaterialApp(
         title: 'UniStay – Student Hostel Booking',
@@ -29,11 +29,9 @@ class HostelApp extends StatelessWidget {
         theme: ThemeData(
           useMaterial3: true,
           fontFamily: 'Poppins',
-          colorScheme: ColorScheme.fromSeed(
-            seedColor: const Color(0xFF1A1F71),
-          ),
+          colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF1A1F71)),
         ),
-        home: const RegisterScreen(),
+        home: const RoleSelectScreen(),
       ),
     );
   }

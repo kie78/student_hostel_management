@@ -1,15 +1,19 @@
 // landlord_dashboard_screen.dart
 // On first load the dashboard fetches:
-//   GET /landlord/hostels      → populates LandlordStore.hostels
-//   GET /landlord/notifications → populates LandlordStore.notifications
-// Pull-to-refresh re-fetches both.
+//   GET /landlord/hostels                     → populates LandlordStore.hostels
+//   GET /landlord/hostels/:hostelId/bookings → populates LandlordStore.bookings
+//   GET /landlord/notifications              → populates LandlordStore.notifications
+// Pull-to-refresh re-fetches all three.
 // No dummy / mock data anywhere.
 
 import 'package:dio/dio.dart';
+import 'package:clerk_flutter/clerk_flutter.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import '../../services/auth_service.dart';
+import '../role_select_screen.dart';
 import 'landlord_models.dart';
-import 'add_hostel_screen.dart' hide LandlordStore;
+import 'add_hostel_screen.dart' show AddHostelScreen;
 import 'landlord_bookings_screen.dart';
 
 class LandlordDashboardScreen extends StatefulWidget {
@@ -64,13 +68,16 @@ class _LandlordDashboardScreenState extends State<LandlordDashboardScreen>
     });
 
     try {
-      // Parallel fetch: hostels + notifications
+      // Hostels must load first because bookings are fetched per hostel.
+      final hostels = await ApiService.fetchMyHostels();
+      LandlordStore.setHostels(hostels);
+
       final results = await Future.wait([
-        ApiService.fetchMyHostels(),
+        ApiService.fetchAllBookings(hostels),
         ApiService.fetchNotifications(),
       ]);
 
-      LandlordStore.setHostels(results[0] as List<LandlordHostel>);
+      LandlordStore.setBookings(results[0] as List<LandlordBooking>);
       LandlordStore.setNotifications(
           results[1] as List<LandlordNotification>);
     } catch (e) {
@@ -96,14 +103,151 @@ class _LandlordDashboardScreenState extends State<LandlordDashboardScreen>
   }
 
   String _formatUGX(double amount) {
-    if (amount >= 1000000)
+    if (amount >= 1000000) {
       return 'UGX ${(amount / 1000000).toStringAsFixed(2)}M';
-    if (amount >= 1000)
+    }
+    if (amount >= 1000) {
       return 'UGX ${(amount / 1000).toStringAsFixed(0)}K';
+    }
     return 'UGX ${amount.toStringAsFixed(0)}';
   }
 
   void _refresh() => _loadDashboard();
+
+  String _metadataValue(
+    Map<String, dynamic>? metadata,
+    List<String> keys,
+  ) {
+    if (metadata == null) return '';
+    for (final key in keys) {
+      final value = metadata[key];
+      if (value is String && value.trim().isNotEmpty) {
+        return value.trim();
+      }
+    }
+    return '';
+  }
+
+  LandlordProfile _effectiveProfile(BuildContext context) {
+    final stored = LandlordStore.currentLandlord;
+    final auth = ClerkAuth.of(context, listen: false);
+    final user = auth.user;
+    final publicMetadata = user?.publicMetadata;
+    final unsafeMetadata = user?.unsafeMetadata;
+
+    String metadata(List<String> keys) {
+      final publicValue = _metadataValue(publicMetadata, keys);
+      if (publicValue.isNotEmpty) return publicValue;
+      return _metadataValue(unsafeMetadata, keys);
+    }
+
+    final email = stored.email.isNotEmpty
+        ? stored.email
+        : metadata(const ['email', 'studentEmail', 'student_email']).isNotEmpty
+            ? metadata(const ['email', 'studentEmail', 'student_email'])
+            : (user?.emailAddresses ?? []).firstOrNull?.emailAddress ?? '';
+
+    final fullName = stored.fullName.isNotEmpty
+        ? stored.fullName
+        : metadata(const [
+            'fullName',
+            'full_name',
+            'name',
+            'otherNames',
+            'other_names',
+          ]).isNotEmpty
+            ? metadata(const [
+                'fullName',
+                'full_name',
+                'name',
+                'otherNames',
+                'other_names',
+              ])
+            : [user?.firstName ?? '', user?.lastName ?? '']
+                .where((part) => part.trim().isNotEmpty)
+                .join(' ')
+                .trim();
+
+    return LandlordProfile(
+      id: stored.id.isNotEmpty ? stored.id : user?.id ?? 'local-landlord',
+      fullName: fullName.isNotEmpty ? fullName : 'Landlord',
+      username: stored.username.isNotEmpty
+          ? stored.username
+          : metadata(const ['username']),
+      landlordCode: stored.landlordCode.isNotEmpty
+          ? stored.landlordCode
+          : metadata(const ['landlordCode', 'landlord_code', 'code']),
+      email: email,
+      phone: stored.phone.isNotEmpty
+          ? stored.phone
+          : metadata(const ['phone', 'phoneNumber', 'phone_number']),
+      whatsappNumber: stored.whatsappNumber.isNotEmpty
+          ? stored.whatsappNumber
+          : metadata(const ['whatsappNumber', 'whatsapp_number']),
+      gender: stored.gender.isNotEmpty
+          ? stored.gender
+          : metadata(const ['gender']),
+      nin: stored.nin.isNotEmpty ? stored.nin : metadata(const ['nin']),
+      maritalStatus: stored.maritalStatus.isNotEmpty
+          ? stored.maritalStatus
+          : metadata(const ['maritalStatus', 'marital_status']),
+      universityName: stored.universityName.isNotEmpty
+          ? stored.universityName
+          : metadata(const ['universityName', 'university_name']),
+      joinedAt: stored.joinedAt,
+    );
+  }
+
+  String _initials(String value) {
+    final parts = value
+        .split(' ')
+        .where((part) => part.trim().isNotEmpty)
+        .take(2)
+        .toList();
+    if (parts.isEmpty) return 'L';
+    return parts.map((part) => part[0].toUpperCase()).join();
+  }
+
+  Future<void> _openAddHostel() async {
+    await Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => const AddHostelScreen()),
+    );
+    _loadDashboard();
+  }
+
+  Future<void> _confirmLogout() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Log Out'),
+        content: const Text('Are you sure you want to log out?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: TextButton.styleFrom(foregroundColor: Colors.red),
+            child: const Text('Log Out'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true && mounted) {
+      final auth = ClerkAuth.of(context, listen: false);
+      await AuthService.logout(auth: auth, role: 'landlord');
+      LandlordStore.clear();
+      if (!mounted) return;
+      Navigator.pushAndRemoveUntil(
+        context,
+        MaterialPageRoute(builder: (_) => const RoleSelectScreen()),
+        (route) => false,
+      );
+    }
+  }
 
   // ── Build ─────────────────────────────────────────────────────────────────
 
@@ -124,13 +268,7 @@ class _LandlordDashboardScreenState extends State<LandlordDashboardScreen>
         floatingActionButton: _currentTab == 0
             ? FloatingActionButton.extended(
                 onPressed: () async {
-                  await Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                        builder: (_) => const AddHostelScreen()),
-                  );
-                  // Refresh after returning from add hostel
-                  _loadDashboard();
+                  await _openAddHostel();
                 },
                 backgroundColor: const Color(0xFF006B4F),
                 icon: const Icon(Icons.add, color: Colors.white),
@@ -170,7 +308,7 @@ class _LandlordDashboardScreenState extends State<LandlordDashboardScreen>
         slivers: [
           // App Bar
           SliverAppBar(
-            expandedHeight: 200,
+            expandedHeight: 118,
             pinned: true,
             floating: false,
             elevation: 0,
@@ -183,19 +321,16 @@ class _LandlordDashboardScreenState extends State<LandlordDashboardScreen>
           ),
 
           SliverToBoxAdapter(
-            child: Transform.translate(
-              offset: const Offset(0, -20),
-              child: _isLoading
-                  ? const Padding(
-                      padding: EdgeInsets.symmetric(vertical: 60),
-                      child: Center(
-                          child: CircularProgressIndicator(
-                              color: Color(0xFF006B4F))),
-                    )
-                  : _errorMessage != null
-                      ? _buildErrorBanner()
-                      : _buildDashboardContent(),
-            ),
+            child: _isLoading
+                ? const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 60),
+                    child: Center(
+                        child: CircularProgressIndicator(
+                            color: Color(0xFF006B4F))),
+                  )
+                : _errorMessage != null
+                    ? _buildErrorBanner()
+                    : _buildDashboardContent(),
           ),
         ],
       ),
@@ -204,7 +339,6 @@ class _LandlordDashboardScreenState extends State<LandlordDashboardScreen>
 
   Widget _buildAppBarBackground() {
     final name = LandlordStore.currentLandlord.fullName;
-    final code = LandlordStore.currentLandlord.landlordCode;
 
     return Container(
       decoration: const BoxDecoration(
@@ -224,7 +358,7 @@ class _LandlordDashboardScreenState extends State<LandlordDashboardScreen>
               height: 160,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                color: Colors.white.withOpacity(0.06),
+                color: Colors.white.withValues(alpha: 0.06),
               ),
             ),
           ),
@@ -236,145 +370,80 @@ class _LandlordDashboardScreenState extends State<LandlordDashboardScreen>
               height: 80,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                color: Colors.white.withOpacity(0.05),
+                color: Colors.white.withValues(alpha: 0.05),
               ),
             ),
           ),
           SafeArea(
             child: Padding(
               padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
-              child: Column(
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'Good ${_greeting()},',
-                            style: const TextStyle(
-                                color: Colors.white70, fontSize: 13),
-                          ),
-                          Text(
-                            name.isNotEmpty
-                                ? name.split(' ').first
-                                : 'Landlord',
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 22,
-                              fontWeight: FontWeight.w800,
-                            ),
-                          ),
-                        ],
+                      Text(
+                        'Good ${_greeting()}',
+                        style: const TextStyle(
+                          color: Colors.white70,
+                          fontSize: 12,
+                        ),
                       ),
-                      Row(
-                        children: [
-                          // Notifications bell
-                          GestureDetector(
-                            onTap: () =>
-                                setState(() => _currentTab = 2),
-                            child: Stack(
-                              children: [
-                                Container(
-                                  padding: const EdgeInsets.all(10),
-                                  decoration: BoxDecoration(
-                                    color: Colors.white
-                                        .withOpacity(0.15),
-                                    borderRadius:
-                                        BorderRadius.circular(12),
-                                  ),
-                                  child: const Icon(
-                                      Icons.notifications_outlined,
-                                      color: Colors.white,
-                                      size: 22),
-                                ),
-                                if (LandlordStore
-                                        .unreadNotifications >
-                                    0)
-                                  Positioned(
-                                    right: 0,
-                                    top: 0,
-                                    child: Container(
-                                      width: 16,
-                                      height: 16,
-                                      decoration: const BoxDecoration(
-                                        color: Color(0xFFFF6B6B),
-                                        shape: BoxShape.circle,
-                                      ),
-                                      child: Center(
-                                        child: Text(
-                                          '${LandlordStore.unreadNotifications}',
-                                          style: const TextStyle(
-                                            color: Colors.white,
-                                            fontSize: 9,
-                                            fontWeight:
-                                                FontWeight.w700,
-                                          ),
-                                        ),
-                                      ),
-                                    ),
-                                  ),
-                              ],
-                            ),
+                      const SizedBox(height: 4),
+                      Text(
+                        name.isNotEmpty ? name.split(' ').first : 'Landlord',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 18,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                    ],
+                  ),
+                  GestureDetector(
+                    onTap: () => setState(() => _currentTab = 2),
+                    child: Stack(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.all(10),
+                          decoration: BoxDecoration(
+                            color: Colors.white.withValues(alpha: 0.15),
+                            borderRadius: BorderRadius.circular(12),
                           ),
-                          const SizedBox(width: 10),
-                          // Avatar
-                          GestureDetector(
-                            onTap: () =>
-                                setState(() => _currentTab = 3),
-                            child: CircleAvatar(
-                              radius: 20,
-                              backgroundColor:
-                                  Colors.white.withOpacity(0.2),
-                              child: Text(
-                                name.isNotEmpty
-                                    ? name
-                                        .split(' ')
-                                        .map((w) => w.isNotEmpty
-                                            ? w[0]
-                                            : '')
-                                        .take(2)
-                                        .join()
-                                    : '?',
-                                style: const TextStyle(
-                                  color: Colors.white,
-                                  fontWeight: FontWeight.w800,
-                                  fontSize: 14,
+                          child: const Icon(
+                            Icons.notifications_outlined,
+                            color: Colors.white,
+                            size: 22,
+                          ),
+                        ),
+                        if (LandlordStore.unreadNotifications > 0)
+                          Positioned(
+                            right: 0,
+                            top: 0,
+                            child: Container(
+                              width: 16,
+                              height: 16,
+                              decoration: const BoxDecoration(
+                                color: Color(0xFFFF6B6B),
+                                shape: BoxShape.circle,
+                              ),
+                              child: Center(
+                                child: Text(
+                                  '${LandlordStore.unreadNotifications}',
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 9,
+                                    fontWeight: FontWeight.w700,
+                                  ),
                                 ),
                               ),
                             ),
                           ),
-                        ],
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 16),
-                  if (code.isNotEmpty)
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 12, vertical: 6),
-                      decoration: BoxDecoration(
-                        color: Colors.white.withOpacity(0.15),
-                        borderRadius: BorderRadius.circular(20),
-                        border: Border.all(
-                            color: Colors.white.withOpacity(0.2)),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          const Icon(Icons.vpn_key_outlined,
-                              color: Colors.white70, size: 13),
-                          const SizedBox(width: 6),
-                          Text(code,
-                              style: const TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w600)),
-                        ],
-                      ),
+                      ],
                     ),
+                  ),
                 ],
               ),
             ),
@@ -423,19 +492,14 @@ class _LandlordDashboardScreenState extends State<LandlordDashboardScreen>
 
     return Column(
       children: [
-        // Earnings card
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 20),
-          child: _buildEarningsCard(),
-        ),
-        const SizedBox(height: 16),
+        const SizedBox(height: 14),
 
         // Stats row
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 20),
           child: _buildStatsRow(),
         ),
-        const SizedBox(height: 20),
+        const SizedBox(height: 16),
 
         // Pending bookings alert
         if (pendingBookings > 0)
@@ -445,12 +509,7 @@ class _LandlordDashboardScreenState extends State<LandlordDashboardScreen>
           ),
         if (pendingBookings > 0) const SizedBox(height: 16),
 
-        // Quick actions
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 20),
-          child: _buildQuickActions(),
-        ),
-        const SizedBox(height: 24),
+        const SizedBox(height: 20),
 
         // My hostels
         Padding(
@@ -522,144 +581,57 @@ class _LandlordDashboardScreenState extends State<LandlordDashboardScreen>
     );
   }
 
-  // ── Earnings Card ─────────────────────────────────────────────────────────
-
-  Widget _buildEarningsCard() {
-    return Container(
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        gradient: const LinearGradient(
-          colors: [Color(0xFF0D1147), Color(0xFF1A1F71)],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
-        borderRadius: BorderRadius.circular(20),
-        boxShadow: [
-          BoxShadow(
-            color: const Color(0xFF0D1147).withOpacity(0.3),
-            blurRadius: 20,
-            offset: const Offset(0, 8),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              const Text('Total Earnings',
-                  style: TextStyle(
-                      color: Colors.white70, fontSize: 13)),
-              Container(
-                padding: const EdgeInsets.symmetric(
-                    horizontal: 10, vertical: 4),
-                decoration: BoxDecoration(
-                  color:
-                      const Color(0xFF00C48C).withOpacity(0.2),
-                  borderRadius: BorderRadius.circular(20),
-                ),
-                child: Row(
-                  children: [
-                    const Icon(Icons.account_balance_wallet,
-                        color: Color(0xFF00C48C), size: 13),
-                    const SizedBox(width: 4),
-                    Text(
-                      '${LandlordStore.hostels.length} hostel${LandlordStore.hostels.length != 1 ? 's' : ''}',
-                      style: const TextStyle(
-                          color: Color(0xFF00C48C),
-                          fontSize: 11,
-                          fontWeight: FontWeight.w600),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 6),
-          Text(
-            _formatUGX(LandlordStore.totalEarnings),
-            style: const TextStyle(
-              color: Colors.white,
-              fontSize: 30,
-              fontWeight: FontWeight.w900,
-              letterSpacing: -0.5,
-            ),
-          ),
-          const SizedBox(height: 16),
-          Row(
-            children: [
-              Expanded(
-                child: _EarningsTile(
-                  label: 'This Month',
-                  value:
-                      _formatUGX(LandlordStore.thisMonthEarnings),
-                  icon: Icons.calendar_today,
-                  color: const Color(0xFFFFD700),
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: _EarningsTile(
-                  label: 'Pending',
-                  value:
-                      _formatUGX(LandlordStore.pendingPayments),
-                  icon: Icons.hourglass_empty,
-                  color: const Color(0xFFFF9800),
-                ),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
   // ── Stats Row ─────────────────────────────────────────────────────────────
 
   Widget _buildStatsRow() {
     final occupied = LandlordStore.totalOccupied;
     final total = LandlordStore.totalCapacity;
-    final rate = total > 0
-        ? (occupied / total * 100).toStringAsFixed(0)
-        : '0';
+    final available = LandlordStore.availableRooms;
 
-    return Row(
+    return Column(
       children: [
-        Expanded(
-          child: _StatCard(
-            value: '${LandlordStore.hostels.length}',
-            label: 'Hostels',
-            icon: Icons.apartment_rounded,
-            color: const Color(0xFF006B4F),
-          ),
+        Row(
+          children: [
+            Expanded(
+              child: _StatCard(
+                value: '${LandlordStore.hostels.length}',
+                label: 'Hostels',
+                icon: Icons.apartment_rounded,
+                color: const Color(0xFF006B4F),
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: _StatCard(
+                value: '$total',
+                label: 'Capacity',
+                icon: Icons.meeting_room_rounded,
+                color: const Color(0xFF1A1F71),
+              ),
+            ),
+          ],
         ),
-        const SizedBox(width: 10),
-        Expanded(
-          child: _StatCard(
-            value: '${LandlordStore.activeBookings}',
-            label: 'Active',
-            icon: Icons.people_rounded,
-            color: const Color(0xFF1A1F71),
-          ),
-        ),
-        const SizedBox(width: 10),
-        Expanded(
-          child: _StatCard(
-            value: '$occupied/$total',
-            label: 'Occupied',
-            icon: Icons.bed_rounded,
-            color: const Color(0xFF7B2FF7),
-          ),
-        ),
-        const SizedBox(width: 10),
-        Expanded(
-          child: _StatCard(
-            value: '$rate%',
-            label: 'Occupancy',
-            icon: Icons.pie_chart_rounded,
-            color: const Color(0xFFB45309),
-          ),
+        const SizedBox(height: 10),
+        Row(
+          children: [
+            Expanded(
+              child: _StatCard(
+                value: '$occupied/$total',
+                label: 'Occupied',
+                icon: Icons.bed_rounded,
+                color: const Color(0xFF7B2FF7),
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: _StatCard(
+                value: '$available',
+                label: 'Available',
+                icon: Icons.event_available_rounded,
+                color: const Color(0xFFB45309),
+              ),
+            ),
+          ],
         ),
       ],
     );
@@ -676,14 +648,14 @@ class _LandlordDashboardScreenState extends State<LandlordDashboardScreen>
           color: const Color(0xFFFFF8E1),
           borderRadius: BorderRadius.circular(12),
           border: Border.all(
-              color: const Color(0xFFFFD700).withOpacity(0.4)),
+              color: const Color(0xFFFFD700).withValues(alpha: 0.4)),
         ),
         child: Row(
           children: [
             Container(
               padding: const EdgeInsets.all(8),
               decoration: BoxDecoration(
-                color: const Color(0xFFFFD700).withOpacity(0.2),
+                color: const Color(0xFFFFD700).withValues(alpha: 0.2),
                 borderRadius: BorderRadius.circular(8),
               ),
               child: const Icon(Icons.pending_actions,
@@ -707,94 +679,6 @@ class _LandlordDashboardScreenState extends State<LandlordDashboardScreen>
     );
   }
 
-  // ── Quick Actions ─────────────────────────────────────────────────────────
-
-  Widget _buildQuickActions() {
-    final actions = [
-      {
-        'icon': Icons.apartment_rounded,
-        'label': 'Add\nHostel',
-        'color': const Color(0xFF006B4F),
-        'onTap': () async {
-          await Navigator.push(
-              context,
-              MaterialPageRoute(
-                  builder: (_) => const AddHostelScreen()));
-          _loadDashboard();
-        },
-      },
-      {
-        'icon': Icons.book_online_rounded,
-        'label': 'View\nBookings',
-        'color': const Color(0xFF1A1F71),
-        'onTap': () => setState(() => _currentTab = 1),
-      },
-      {
-        'icon': Icons.notifications_outlined,
-        'label': 'Notifications',
-        'color': const Color(0xFF7B2FF7),
-        'onTap': () => setState(() => _currentTab = 2),
-      },
-      {
-        'icon': Icons.person_outline_rounded,
-        'label': 'My\nProfile',
-        'color': const Color(0xFFB45309),
-        'onTap': () => setState(() => _currentTab = 3),
-      },
-    ];
-
-    return Row(
-      children: actions.asMap().entries.map((entry) {
-        final i = entry.key;
-        final a = entry.value;
-        return Expanded(
-          child: GestureDetector(
-            onTap: a['onTap'] as VoidCallback,
-            child: Container(
-              margin: EdgeInsets.only(right: i < actions.length - 1 ? 10 : 0),
-              padding: const EdgeInsets.symmetric(vertical: 14),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(14),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withOpacity(0.04),
-                    blurRadius: 8,
-                    offset: const Offset(0, 2),
-                  ),
-                ],
-              ),
-              child: Column(
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(10),
-                    decoration: BoxDecoration(
-                      color: (a['color'] as Color).withOpacity(0.1),
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    child: Icon(a['icon'] as IconData,
-                        color: a['color'] as Color, size: 20),
-                  ),
-                  const SizedBox(height: 6),
-                  Text(
-                    a['label'] as String,
-                    style: const TextStyle(
-                      fontSize: 10.5,
-                      fontWeight: FontWeight.w600,
-                      color: Color(0xFF0D1147),
-                      height: 1.3,
-                    ),
-                    textAlign: TextAlign.center,
-                  ),
-                ],
-              ),
-            ),
-          ),
-        );
-      }).toList(),
-    );
-  }
-
   Widget _buildEmptyHostels() {
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 20),
@@ -803,7 +687,7 @@ class _LandlordDashboardScreenState extends State<LandlordDashboardScreen>
         color: Colors.white,
         borderRadius: BorderRadius.circular(16),
         border: Border.all(
-            color: const Color(0xFF006B4F).withOpacity(0.15)),
+            color: const Color(0xFF006B4F).withValues(alpha: 0.15)),
       ),
       child: Column(
         children: [
@@ -899,7 +783,9 @@ class _LandlordDashboardScreenState extends State<LandlordDashboardScreen>
   // ── Profile Tab ───────────────────────────────────────────────────────────
 
   Widget _buildProfileTab() {
-    final profile = LandlordStore.currentLandlord;
+    final profile = _effectiveProfile(context);
+    final code =
+        profile.landlordCode.isNotEmpty ? profile.landlordCode : 'Code unavailable';
 
     return Scaffold(
       backgroundColor: const Color(0xFFF8F9FE),
@@ -914,83 +800,142 @@ class _LandlordDashboardScreenState extends State<LandlordDashboardScreen>
       ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(24),
-        child: profile.id.isEmpty
-            ? const Center(
-                child: Text(
-                'Profile not loaded yet.',
-                style: TextStyle(color: Colors.grey),
-              ))
-            : Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // Avatar + name
-                  Center(
-                    child: Column(
-                      children: [
-                        CircleAvatar(
-                          radius: 42,
-                          backgroundColor: const Color(0xFF006B4F)
-                              .withOpacity(0.1),
-                          child: Text(
-                            profile.fullName
-                                .split(' ')
-                                .map((w) =>
-                                    w.isNotEmpty ? w[0] : '')
-                                .take(2)
-                                .join(),
-                            style: const TextStyle(
-                                fontSize: 28,
-                                fontWeight: FontWeight.w800,
-                                color: Color(0xFF006B4F)),
-                          ),
-                        ),
-                        const SizedBox(height: 12),
-                        Text(profile.fullName,
-                            style: const TextStyle(
-                                fontSize: 20,
-                                fontWeight: FontWeight.w800,
-                                color: Color(0xFF0D1147))),
-                        const SizedBox(height: 4),
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 12, vertical: 5),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFF006B4F)
-                                .withOpacity(0.1),
-                            borderRadius: BorderRadius.circular(20),
-                          ),
-                          child: Text(profile.landlordCode,
-                              style: const TextStyle(
-                                  color: Color(0xFF006B4F),
-                                  fontWeight: FontWeight.w700,
-                                  fontSize: 13)),
-                        ),
-                      ],
-                    ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(22),
+              decoration: BoxDecoration(
+                gradient: const LinearGradient(
+                  colors: [Color(0xFF006B4F), Color(0xFF00A876)],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
+                borderRadius: BorderRadius.circular(24),
+                boxShadow: [
+                  BoxShadow(
+                    color: const Color(0xFF006B4F).withValues(alpha: 0.18),
+                    blurRadius: 20,
+                    offset: const Offset(0, 10),
                   ),
-                  const SizedBox(height: 28),
-                  _ProfileRow(
-                      label: 'Email', value: profile.email),
-                  _ProfileRow(
-                      label: 'Phone', value: profile.phone),
-                  _ProfileRow(
-                      label: 'WhatsApp',
-                      value: profile.whatsappNumber),
-                  _ProfileRow(
-                      label: 'Gender', value: profile.gender),
-                  _ProfileRow(
-                      label: 'NIN', value: profile.nin),
-                  _ProfileRow(
-                      label: 'Marital Status',
-                      value: profile.maritalStatus),
-                  _ProfileRow(
-                      label: 'University',
-                      value: profile.universityName),
-                  _ProfileRow(
-                      label: 'Member Since',
-                      value: _formatDate(profile.joinedAt)),
                 ],
               ),
+              child: Column(
+                children: [
+                  CircleAvatar(
+                    radius: 38,
+                    backgroundColor: Colors.white.withValues(alpha: 0.18),
+                    child: Text(
+                      _initials(profile.fullName),
+                      style: const TextStyle(
+                        fontSize: 24,
+                        fontWeight: FontWeight.w800,
+                        color: Colors.white,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                  Text(
+                    profile.fullName,
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                      fontSize: 22,
+                      fontWeight: FontWeight.w800,
+                      color: Colors.white,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 12, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.15),
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: Text(
+                      code,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w700,
+                        fontSize: 13,
+                      ),
+                    ),
+                  ),
+                  if (profile.email.isNotEmpty) ...[
+                    const SizedBox(height: 10),
+                    Text(
+                      profile.email,
+                      style: const TextStyle(
+                        color: Colors.white70,
+                        fontSize: 13,
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            const SizedBox(height: 24),
+            const Text(
+              'Quick Actions',
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.w800,
+                color: Color(0xFF0D1147),
+              ),
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Expanded(
+                  child: _ProfileActionCard(
+                    title: 'Alerts',
+                    subtitle: LandlordStore.unreadNotifications > 0
+                        ? '${LandlordStore.unreadNotifications} unread'
+                        : 'View updates',
+                    icon: Icons.notifications_rounded,
+                    color: const Color(0xFF1A1F71),
+                    onTap: () => setState(() => _currentTab = 2),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: _ProfileActionCard(
+                    title: 'Bookings',
+                    subtitle: 'Manage reservations',
+                    icon: Icons.book_online_rounded,
+                    color: const Color(0xFF006B4F),
+                    onTap: () => setState(() => _currentTab = 1),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Expanded(
+                  child: _ProfileActionCard(
+                    title: 'Add Hostel',
+                    subtitle: 'List a new property',
+                    icon: Icons.add_business_rounded,
+                    color: const Color(0xFFB45309),
+                    onTap: _openAddHostel,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: _ProfileActionCard(
+                    title: 'Logout',
+                    subtitle: 'Sign out safely',
+                    icon: Icons.logout_rounded,
+                    color: const Color(0xFFB91C1C),
+                    onTap: _confirmLogout,
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -999,10 +944,9 @@ class _LandlordDashboardScreenState extends State<LandlordDashboardScreen>
 
   Widget _buildBottomNav() {
     final items = [
-      {'icon': Icons.dashboard_rounded, 'label': 'Home'},
-      {'icon': Icons.book_online_rounded, 'label': 'Bookings'},
-      {'icon': Icons.notifications_rounded, 'label': 'Alerts'},
-      {'icon': Icons.person_rounded, 'label': 'Profile'},
+      {'icon': Icons.dashboard_rounded, 'label': 'Home', 'tab': 0},
+      {'icon': Icons.book_online_rounded, 'label': 'Bookings', 'tab': 1},
+      {'icon': Icons.person_rounded, 'label': 'Profile', 'tab': 3},
     ];
 
     return Container(
@@ -1010,7 +954,7 @@ class _LandlordDashboardScreenState extends State<LandlordDashboardScreen>
         color: Colors.white,
         boxShadow: [
           BoxShadow(
-              color: Colors.black.withOpacity(0.06),
+              color: Colors.black.withValues(alpha: 0.06),
               blurRadius: 16,
               offset: const Offset(0, -4)),
         ],
@@ -1022,19 +966,19 @@ class _LandlordDashboardScreenState extends State<LandlordDashboardScreen>
           child: Row(
             mainAxisAlignment: MainAxisAlignment.spaceAround,
             children: items.asMap().entries.map((entry) {
-              final i = entry.key;
               final item = entry.value;
-              final isActive = _currentTab == i;
+              final tabIndex = item['tab'] as int;
+              final isActive = _currentTab == tabIndex;
 
               return GestureDetector(
-                onTap: () => setState(() => _currentTab = i),
+                onTap: () => setState(() => _currentTab = tabIndex),
                 child: AnimatedContainer(
                   duration: const Duration(milliseconds: 200),
                   padding: const EdgeInsets.symmetric(
                       horizontal: 16, vertical: 8),
                   decoration: BoxDecoration(
                     color: isActive
-                        ? const Color(0xFF006B4F).withOpacity(0.1)
+                        ? const Color(0xFF006B4F).withValues(alpha: 0.1)
                         : Colors.transparent,
                     borderRadius: BorderRadius.circular(12),
                   ),
@@ -1050,20 +994,6 @@ class _LandlordDashboardScreenState extends State<LandlordDashboardScreen>
                                 : Colors.grey.shade400,
                             size: 22,
                           ),
-                          if (i == 2 &&
-                              LandlordStore.unreadNotifications > 0)
-                            Positioned(
-                              right: 0,
-                              top: 0,
-                              child: Container(
-                                width: 8,
-                                height: 8,
-                                decoration: const BoxDecoration(
-                                  color: Color(0xFFFF6B6B),
-                                  shape: BoxShape.circle,
-                                ),
-                              ),
-                            ),
                         ],
                       ),
                       const SizedBox(height: 3),
@@ -1097,57 +1027,81 @@ class _LandlordDashboardScreenState extends State<LandlordDashboardScreen>
     return 'Evening';
   }
 
-  String _formatDate(DateTime d) {
-    const m = [
-      'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'
-    ];
-    return '${d.day} ${m[d.month - 1]} ${d.year}';
-  }
 }
 
 // ─── Supporting Widgets ────────────────────────────────────────────────────────
 
-class _EarningsTile extends StatelessWidget {
-  final String label;
-  final String value;
+class _ProfileActionCard extends StatelessWidget {
+  final String title;
+  final String subtitle;
   final IconData icon;
   final Color color;
+  final VoidCallback onTap;
 
-  const _EarningsTile(
-      {required this.label,
-      required this.value,
-      required this.icon,
-      required this.color});
+  const _ProfileActionCard({
+    required this.title,
+    required this.subtitle,
+    required this.icon,
+    required this.color,
+    required this.onTap,
+  });
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.1),
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Row(
-        children: [
-          Icon(icon, color: color, size: 16),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(label,
-                    style: const TextStyle(
-                        color: Colors.white60, fontSize: 10)),
-                Text(value,
-                    style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 13,
-                        fontWeight: FontWeight.w700)),
-              ],
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        height: 100,
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(18),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.05),
+              blurRadius: 12,
+              offset: const Offset(0, 4),
             ),
-          ),
-        ],
+          ],
+        ),
+        child: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: color.withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Icon(icon, color: color, size: 20),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Text(
+                    title,
+                    style: const TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                      color: Color(0xFF0D1147),
+                    ),
+                  ),
+                  const SizedBox(height: 3),
+                  Text(
+                    subtitle,
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: Colors.grey.shade500,
+                    ),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -1168,29 +1122,31 @@ class _StatCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 8),
+      padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 14),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(14),
         boxShadow: [
           BoxShadow(
-              color: Colors.black.withOpacity(0.04),
+              color: Colors.black.withValues(alpha: 0.04),
               blurRadius: 8,
               offset: const Offset(0, 2)),
         ],
       ),
       child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Icon(icon, color: color, size: 20),
-          const SizedBox(height: 6),
+          const SizedBox(height: 10),
           Text(value,
               style: TextStyle(
                   fontWeight: FontWeight.w800,
-                  fontSize: 14,
+                  fontSize: 16,
                   color: color)),
+          const SizedBox(height: 2),
           Text(label,
               style: TextStyle(
-                  fontSize: 10, color: Colors.grey.shade500)),
+                  fontSize: 11, color: Colors.grey.shade500)),
         ],
       ),
     );
@@ -1217,7 +1173,7 @@ class _HostelCard extends StatelessWidget {
           borderRadius: BorderRadius.circular(16),
           boxShadow: [
             BoxShadow(
-                color: Colors.black.withOpacity(0.05),
+                color: Colors.black.withValues(alpha: 0.05),
                 blurRadius: 10,
                 offset: const Offset(0, 3)),
           ],
@@ -1384,7 +1340,7 @@ class _NotificationMiniCard extends StatelessWidget {
         borderRadius: BorderRadius.circular(14),
         boxShadow: [
           BoxShadow(
-              color: Colors.black.withOpacity(0.04),
+              color: Colors.black.withValues(alpha: 0.04),
               blurRadius: 8,
               offset: const Offset(0, 2)),
         ],
@@ -1394,7 +1350,7 @@ class _NotificationMiniCard extends StatelessWidget {
           Container(
             padding: const EdgeInsets.all(8),
             decoration: BoxDecoration(
-              color: const Color(0xFF006B4F).withOpacity(0.1),
+              color: const Color(0xFF006B4F).withValues(alpha: 0.1),
               borderRadius: BorderRadius.circular(10),
             ),
             child: Icon(
@@ -1461,7 +1417,7 @@ class _NotificationCard extends StatelessWidget {
           border: Border.all(
             color: notification.isRead
                 ? Colors.grey.shade200
-                : const Color(0xFF006B4F).withOpacity(0.2),
+                : const Color(0xFF006B4F).withValues(alpha: 0.2),
           ),
         ),
         child: Row(
@@ -1469,7 +1425,7 @@ class _NotificationCard extends StatelessWidget {
             Container(
               padding: const EdgeInsets.all(10),
               decoration: BoxDecoration(
-                color: const Color(0xFF006B4F).withOpacity(0.1),
+                color: const Color(0xFF006B4F).withValues(alpha: 0.1),
                 borderRadius: BorderRadius.circular(10),
               ),
               child: Icon(
@@ -1518,32 +1474,3 @@ class _NotificationCard extends StatelessWidget {
   }
 }
 
-class _ProfileRow extends StatelessWidget {
-  final String label;
-  final String value;
-  const _ProfileRow({required this.label, required this.value});
-  @override
-  Widget build(BuildContext context) => Padding(
-        padding: const EdgeInsets.symmetric(vertical: 8),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            SizedBox(
-              width: 120,
-              child: Text(label,
-                  style: TextStyle(
-                      fontSize: 13, color: Colors.grey.shade500)),
-            ),
-            Expanded(
-              child: Text(
-                value.isNotEmpty ? value : '—',
-                style: const TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600,
-                    color: Color(0xFF0D1147)),
-              ),
-            ),
-          ],
-        ),
-      );
-}
