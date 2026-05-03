@@ -151,6 +151,7 @@ static Future<Map<String, dynamic>> registerLandlord({
       'whatsapp_number': whatsappNumber,
       'email': email,
       'password': password,
+      'ownership_documents': const <String>[],
     },
   );
   return response.data;

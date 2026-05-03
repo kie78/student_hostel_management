@@ -15,7 +15,6 @@ class _RoomDetailsScreenState extends State<RoomDetailsScreen>
     with TickerProviderStateMixin {
   late TabController _tabController;
   int _selectedRoomIndex = 0;
-  bool _isFavorited = false;
   int _imageIndex = 0;
   final PageController _imagePageController = PageController();
   final ScrollController _scrollController = ScrollController();
@@ -79,44 +78,6 @@ class _RoomDetailsScreenState extends State<RoomDetailsScreen>
                     child: const Icon(Icons.arrow_back, color: Colors.white),
                   ),
                 ),
-                actions: [
-                  GestureDetector(
-                    onTap: () => setState(() => _isFavorited = !_isFavorited),
-                    child: Container(
-                      margin: const EdgeInsets.all(8),
-                      decoration: BoxDecoration(
-                        color: Colors.black.withValues(alpha: 0.4),
-                        shape: BoxShape.circle,
-                      ),
-                      child: Padding(
-                        padding: const EdgeInsets.all(8),
-                        child: Icon(
-                          _isFavorited ? Icons.favorite : Icons.favorite_border,
-                          color: _isFavorited ? Colors.red : Colors.white,
-                          size: 20,
-                        ),
-                      ),
-                    ),
-                  ),
-                  GestureDetector(
-                    onTap: () {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('Link copied to clipboard!')),
-                      );
-                    },
-                    child: Container(
-                      margin: const EdgeInsets.fromLTRB(0, 8, 12, 8),
-                      decoration: BoxDecoration(
-                        color: Colors.black.withValues(alpha: 0.4),
-                        shape: BoxShape.circle,
-                      ),
-                      child: const Padding(
-                        padding: EdgeInsets.all(8),
-                        child: Icon(Icons.share_outlined, color: Colors.white, size: 20),
-                      ),
-                    ),
-                  ),
-                ],
                 flexibleSpace: FlexibleSpaceBar(
                   background: Stack(
                     fit: StackFit.expand,

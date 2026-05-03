@@ -6,6 +6,24 @@ import 'api_client.dart';
 class StudentApiService {
   static final _dio = ApiClient.dio;
 
+  static List<dynamic> _readListPayload(dynamic payload) {
+    if (payload is List) {
+      return payload;
+    }
+
+    if (payload is Map) {
+      final map = Map<String, dynamic>.from(payload);
+      for (final key in const ['bookings', 'items', 'results', 'rows']) {
+        final value = map[key];
+        if (value is List) {
+          return value;
+        }
+      }
+    }
+
+    return const <dynamic>[];
+  }
+
   // ── Bookings ──────────────────────────────────────────────────────────────
 
   /// POST /student/bookings
@@ -25,7 +43,11 @@ class StudentApiService {
   /// GET /student/bookings
   static Future<List<dynamic>> getMyBookings() async {
     final response = await _dio.get('/student/bookings');
-    return response.data['data'] as List<dynamic>;
+    final body = response.data;
+    if (body is Map && body.containsKey('data')) {
+      return _readListPayload(body['data']);
+    }
+    return _readListPayload(body);
   }
 
   /// GET /student/bookings/:bookingId

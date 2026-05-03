@@ -176,11 +176,25 @@ class _StudentBookingsTabState extends State<_StudentBookingsTab> {
     });
     try {
       final raw = await StudentApiService.getMyBookings();
+      final parsed = <BookingData>[];
+      for (final item in raw) {
+        if (item is! Map) continue;
+        try {
+          parsed.add(
+            BookingData.fromApiResponse(Map<String, dynamic>.from(item)),
+          );
+        } catch (_) {
+          // Skip malformed entries instead of blanking the whole bookings view.
+        }
+      }
+
+      final lastBooking = BookingStore.lastBooking;
+      if (lastBooking != null && !parsed.any((b) => b.id == lastBooking.id)) {
+        parsed.insert(0, lastBooking);
+      }
+
       setState(() {
-        _bookings = raw
-            .map((b) =>
-                BookingData.fromApiResponse(b as Map<String, dynamic>))
-            .toList();
+        _bookings = parsed;
       });
     } on DioException catch (e) {
       setState(() {

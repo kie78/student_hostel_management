@@ -38,18 +38,69 @@ class BookingData {
       .map((w) => w.isEmpty ? w : '${w[0].toUpperCase()}${w.substring(1)}')
       .join(' ');
 
-  factory BookingData.fromApiResponse(Map<String, dynamic> json) {
-    final room = json['room'] as Map<String, dynamic>;
-    final hostel = room['hostel'] as Map<String, dynamic>;
+  static Map<String, dynamic> _asMap(dynamic value) {
+    if (value is Map<String, dynamic>) return value;
+    if (value is Map) return Map<String, dynamic>.from(value);
+    return <String, dynamic>{};
+  }
+
+  static String _readString(Map<String, dynamic> source, List<String> keys) {
+    for (final key in keys) {
+      final value = source[key];
+      if (value is String && value.trim().isNotEmpty) {
+        return value.trim();
+      }
+    }
+    return '';
+  }
+
+  factory BookingData.fromApiResponse(
+    Map<String, dynamic> json, {
+    String fallbackRoomType = '',
+    double fallbackRoomPrice = 0,
+    String fallbackHostelName = '',
+    String fallbackHostelLocation = '',
+  }) {
+    final booking = _asMap(json['booking']).isNotEmpty ? _asMap(json['booking']) : json;
+    final room = _asMap(booking['room']).isNotEmpty
+        ? _asMap(booking['room'])
+        : _asMap(json['room']);
+    final hostel = _asMap(room['hostel']).isNotEmpty
+        ? _asMap(room['hostel'])
+        : _asMap(booking['hostel']).isNotEmpty
+            ? _asMap(booking['hostel'])
+            : _asMap(json['hostel']);
+
+    final bookingId = _readString(booking, const ['id', 'bookingId']);
+    final roomTypeValue = _readString(
+      room,
+      const ['roomType', 'type', 'room_type'],
+    );
+    final hostelNameValue = _readString(
+      hostel,
+      const ['hostelName', 'name', 'hostel_name'],
+    );
+    final hostelLocationValue = _readString(
+      hostel,
+      const ['location', 'address'],
+    );
+
     return BookingData(
-      id: json['id'] as String,
-      status: json['status'] as String? ?? 'active',
-      createdAt: DateTime.tryParse(json['createdAt'] as String? ?? '') ??
+      id: bookingId.isNotEmpty ? bookingId : 'local-booking',
+      status: _readString(booking, const ['status']).isNotEmpty
+          ? _readString(booking, const ['status'])
+          : 'active',
+      createdAt: DateTime.tryParse(
+            _readString(booking, const ['createdAt', 'created_at']),
+          ) ??
           DateTime.now(),
-      roomType: room['roomType'] as String? ?? '',
-      roomPrice: double.tryParse(room['price'].toString()) ?? 0,
-      hostelName: hostel['hostelName'] as String? ?? '',
-      hostelLocation: hostel['location'] as String? ?? '',
+      roomType: roomTypeValue.isNotEmpty ? roomTypeValue : fallbackRoomType,
+      roomPrice: double.tryParse(room['price'].toString()) ?? fallbackRoomPrice,
+      hostelName:
+          hostelNameValue.isNotEmpty ? hostelNameValue : fallbackHostelName,
+      hostelLocation: hostelLocationValue.isNotEmpty
+          ? hostelLocationValue
+          : fallbackHostelLocation,
     );
   }
 
@@ -175,7 +226,14 @@ class _BookingScreenState extends State<BookingScreen>
     });
     try {
       final data = await StudentApiService.createBooking(widget.roomType.id);
-      final booking = BookingData.fromApiResponse(data);
+      final booking = BookingData.fromApiResponse(
+        data,
+        fallbackRoomType: widget.roomType.roomType,
+        fallbackRoomPrice: widget.roomType.price,
+        fallbackHostelName: widget.hostel.name,
+        fallbackHostelLocation: widget.hostel.location,
+      );
+      BookingStore.lastBooking = booking;
       setState(() {
         _createdBooking = booking;
         _step = 1;

@@ -620,14 +620,12 @@ class _LandlordsTabContentState extends State<_LandlordsTabContent>
   final _searchCtrl = TextEditingController();
   final List<String> _tabs = ['All', 'Active', 'Suspended'];
   late List<Map<String, dynamic>> _landlords;
+  final Map<String, bool> _statusOverrides = {};
 
   @override
   void initState() {
     super.initState();
-    _landlords =
-        widget.landlords.map((landlord) {
-          return Map<String, dynamic>.from(landlord);
-        }).toList();
+    _landlords = _copyLandlords(widget.landlords);
     _tabController = TabController(length: _tabs.length, vsync: this);
     _tabController.addListener(() => setState(() {}));
   }
@@ -636,11 +634,26 @@ class _LandlordsTabContentState extends State<_LandlordsTabContent>
   void didUpdateWidget(covariant _LandlordsTabContent oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.landlords != widget.landlords) {
-      _landlords =
-          widget.landlords.map((landlord) {
-            return Map<String, dynamic>.from(landlord);
-          }).toList();
+      _landlords = _copyLandlords(widget.landlords);
     }
+  }
+
+  List<Map<String, dynamic>> _copyLandlords(List<Map<String, dynamic>> source) {
+    return source.map((landlord) {
+      final copy = Map<String, dynamic>.from(landlord);
+      final userId = _landlordUserId(copy);
+      final override = userId == null ? null : _statusOverrides[userId];
+      if (override == null) return copy;
+
+      copy['isSuspended'] = override;
+      final user = copy['user'];
+      if (user is Map) {
+        final updatedUser = Map<String, dynamic>.from(user);
+        updatedUser['isSuspended'] = override;
+        copy['user'] = updatedUser;
+      }
+      return copy;
+    }).toList();
   }
 
   @override
@@ -704,14 +717,19 @@ class _LandlordsTabContentState extends State<_LandlordsTabContent>
 
   void _toggleSuspension(Map<String, dynamic> landlord) {
     final isSuspended = _isLandlordSuspended(landlord);
+    final nextValue = !isSuspended;
+    final userId = _landlordUserId(landlord);
 
     setState(() {
-      landlord['isSuspended'] = !isSuspended;
+      landlord['isSuspended'] = nextValue;
+      if (userId != null) {
+        _statusOverrides[userId] = nextValue;
+      }
 
       final user = landlord['user'];
       if (user is Map) {
         final updatedUser = Map<String, dynamic>.from(user);
-        updatedUser['isSuspended'] = !isSuspended;
+        updatedUser['isSuspended'] = nextValue;
         landlord['user'] = updatedUser;
       }
     });

@@ -44,14 +44,11 @@ class _RegisterLandlordScreenState extends State<RegisterLandlordScreen>
   ];
 
   // Generated credentials
-  late String _landlordCode;
-  late String _username;
   late String _tempPassword;
 
   @override
   void initState() {
     super.initState();
-    _landlordCode = UniversityStore.generateLandlordCode();
     _tempPassword = _generateTempPassword();
 
     _stepController = AnimationController(
@@ -66,10 +63,6 @@ class _RegisterLandlordScreenState extends State<RegisterLandlordScreen>
                 parent: _stepController, curve: Curves.easeOutCubic));
     _stepController.forward();
 
-    _fullNameController.addListener(() => setState(() {
-          _username = UniversityStore.generateUsername(
-              _fullNameController.text.trim());
-        }));
   }
 
   @override
@@ -158,23 +151,27 @@ class _RegisterLandlordScreenState extends State<RegisterLandlordScreen>
 
       if (!mounted) return;
 
-      final landlordData = response['data']['landlord'];
+      final landlordData = response['data'] is Map
+          ? Map<String, dynamic>.from(response['data'] as Map)
+          : <String, dynamic>{};
 
       final landlord = UniversityLandlord(
-        id: landlordData['id'],
-        fullName: landlordData['fullName'],
+        id: (landlordData['id'] ?? '').toString(),
+        fullName: (landlordData['fullName'] ?? _fullNameController.text.trim())
+            .toString(),
         gender: _selectedGender!,
         nin: _ninController.text.trim().toUpperCase(),
         maritalStatus: _selectedMaritalStatus!,
-        email: landlordData['email'],
+        email: (landlordData['email'] ?? _emailController.text.trim())
+            .toString(),
         whatsappNumber: _whatsappController.text.trim(),
-        universityId: '',
-        landlordCode: landlordData['landlordCode'],
-        username: landlordData['fullName']
-            .toString()
-            .toLowerCase()
-            .replaceAll(' ', '_'),
-        registeredAt: DateTime.now(),
+        universityId: (landlordData['universityId'] ?? '').toString(),
+        landlordCode: (landlordData['landlordCode'] ?? '').toString(),
+        username: '',
+        registeredAt: DateTime.tryParse(
+              (landlordData['createdAt'] ?? '').toString(),
+            ) ??
+            DateTime.now(),
       );
 
       showDialog(
@@ -597,9 +594,6 @@ class _RegisterLandlordScreenState extends State<RegisterLandlordScreen>
   // ── Step 3: Preview & Submit ──────────────────────────────────────────────
 
   Widget _buildStep3() {
-    _username = UniversityStore.generateUsername(
-        _fullNameController.text.trim());
-
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -647,7 +641,7 @@ class _RegisterLandlordScreenState extends State<RegisterLandlordScreen>
                   Icon(Icons.vpn_key_outlined,
                       color: Colors.white70, size: 15),
                   SizedBox(width: 6),
-                  Text('Login Credentials (sent via email)',
+                  Text('Credentials & Landlord Code',
                       style: TextStyle(
                           color: Colors.white70,
                           fontSize: 12,
@@ -655,12 +649,15 @@ class _RegisterLandlordScreenState extends State<RegisterLandlordScreen>
                 ],
               ),
               const SizedBox(height: 12),
-              _CredRow(label: 'Landlord Code', value: _landlordCode),
-              _CredRow(label: 'Username', value: _username),
+              const _CredRow(
+                label: 'Landlord Code',
+                value: 'Generated after registration',
+              ),
+              _CredRow(label: 'Login Email', value: _emailController.text.trim()),
               _CredRow(label: 'Temp Password', value: _tempPassword),
               const SizedBox(height: 8),
               Text(
-                '⚠️ Landlord must reset this password on first login.',
+                'The backend generates the landlord code after submission and it will be shown in the success dialog and email.',
                 style: TextStyle(fontSize: 11, color: Colors.yellow.shade200),
               ),
             ],
@@ -736,7 +733,7 @@ class _RegisterLandlordScreenState extends State<RegisterLandlordScreen>
                         color: Color(0xFF0D1147))),
                 const SizedBox(height: 8),
                 Text(
-                  'You have been registered as a landlord on UniStay by ${UniversityStore.currentUniversity.name}. Below are your login credentials:',
+                  'You have been registered as a landlord on UniStay by ${UniversityStore.currentUniversity.name}. The landlord code will be generated when you submit this form.',
                   style: TextStyle(
                       fontSize: 12,
                       color: Colors.grey.shade600,
@@ -753,10 +750,8 @@ class _RegisterLandlordScreenState extends State<RegisterLandlordScreen>
                   ),
                   child: Column(
                     children: [
-                      _EmailInfoRow(
-                          label: 'Landlord Code', value: _landlordCode),
-                      const SizedBox(height: 4),
-                      _EmailInfoRow(label: 'Username', value: _username),
+                      const _EmailInfoRow(
+                          label: 'Landlord Code', value: 'Generated on submit'),
                       const SizedBox(height: 4),
                       _EmailInfoRow(
                           label: 'Password', value: _tempPassword),
@@ -1063,6 +1058,32 @@ class _EmailInfoRow extends StatelessWidget {
       );
 }
 
+class _SelectableInfoRow extends StatelessWidget {
+  final String label;
+  final String value;
+  const _SelectableInfoRow({required this.label, required this.value});
+
+  @override
+  Widget build(BuildContext context) => Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('$label: ',
+              style:
+                  TextStyle(fontSize: 12, color: Colors.grey.shade600)),
+          Expanded(
+            child: SelectableText(
+              value,
+              style: const TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+                color: Color(0xFF7B2FF7),
+              ),
+            ),
+          ),
+        ],
+      );
+}
+
 class _SuccessDialog extends StatelessWidget {
   final UniversityLandlord landlord;
   final String tempPassword;
@@ -1118,7 +1139,7 @@ class _SuccessDialog extends StatelessWidget {
                     _EmailInfoRow(
                         label: 'Email', value: landlord.email),
                     const SizedBox(height: 4),
-                    _EmailInfoRow(
+                    _SelectableInfoRow(
                         label: 'Code', value: landlord.landlordCode),
                     const SizedBox(height: 4),
                     _EmailInfoRow(
