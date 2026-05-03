@@ -3,6 +3,8 @@
 
 import 'package:dio/dio.dart';
 
+import '../../services/api_client.dart' as shared_api;
+
 // ─── Enums ────────────────────────────────────────────────────────────────────
 
 enum RoomTypeEnum { singleSelfContained, doubleSelfContained }
@@ -19,6 +21,7 @@ class LandlordRoom {
   final RoomTypeEnum type;
   final double pricePerMonth;
   final int totalSlots;
+  final int roomCount;
   int occupiedSlots;
   bool isAvailable;
 
@@ -32,6 +35,7 @@ class LandlordRoom {
     required this.type,
     required this.pricePerMonth,
     required this.totalSlots,
+    this.roomCount = 1,
     this.occupiedSlots = 0,
     this.isAvailable = true,
     this.features = const [],
@@ -72,6 +76,7 @@ class LandlordRoom {
       type: type,
       pricePerMonth: double.tryParse(json['price'].toString()) ?? 0,
       totalSlots: (json['capacity'] as num?)?.toInt() ?? 0,
+      roomCount: 1,
       occupiedSlots: (json['occupiedSlots'] as num?)?.toInt() ?? 0,
       isAvailable: json['isAvailable'] as bool? ?? true,
     );
@@ -368,21 +373,30 @@ class LandlordProfile {
   });
 
   factory LandlordProfile.fromApi(Map<String, dynamic> json) {
+    final profile =
+      json['profile'] is Map<String, dynamic>
+        ? json['profile'] as Map<String, dynamic>
+        : json['profile'] is Map
+          ? Map<String, dynamic>.from(json['profile'] as Map)
+          : json;
+
     return LandlordProfile(
       id: json['id'] as String? ?? '',
-      fullName: json['fullName'] as String? ?? '',
+      fullName: profile['fullName'] as String? ?? json['fullName'] as String? ?? '',
       username: json['username'] as String? ?? '',
-      landlordCode: json['landlordCode'] as String? ?? '',
-      email: json['email'] as String? ?? '',
-      phone: json['phone'] as String? ?? '',
-      whatsappNumber: json['whatsappNumber'] as String? ?? '',
-      gender: json['gender'] as String? ?? '',
-      nin: json['nin'] as String? ?? '',
-      maritalStatus: json['maritalStatus'] as String? ?? '',
+      landlordCode: profile['landlordCode'] as String? ?? json['landlordCode'] as String? ?? '',
+      email: profile['email'] as String? ?? json['email'] as String? ?? '',
+      phone: profile['phone'] as String? ?? json['phone'] as String? ?? '',
+      whatsappNumber: profile['whatsappNumber'] as String? ?? json['whatsappNumber'] as String? ?? '',
+      gender: profile['gender'] as String? ?? json['gender'] as String? ?? '',
+      nin: profile['nin'] as String? ?? json['nin'] as String? ?? '',
+      maritalStatus: profile['maritalStatus'] as String? ?? json['maritalStatus'] as String? ?? '',
       universityName:
-          json['university']?['universityName'] as String? ?? '',
+        profile['university']?['universityName'] as String? ??
+        json['university']?['universityName'] as String? ??
+        '',
       joinedAt:
-          DateTime.tryParse(json['createdAt']?.toString() ?? '') ??
+        DateTime.tryParse(json['createdAt']?.toString() ?? profile['createdAt']?.toString() ?? '') ??
               DateTime.now(),
     );
   }
@@ -419,37 +433,20 @@ class LandlordProfile {
 typedef TokenProvider = Future<String?> Function();
 
 class ApiService {
-  static const String _baseUrl =
-      'https://hostel-booking-api.onrender.com/api';
-
-  static late Dio _dio;
-  static late TokenProvider _getToken;
+  static final Dio _dio = shared_api.ApiClient.dio;
 
   /// Call once after Clerk login, before any API method.
   static void init(TokenProvider getToken) {
-    _getToken = getToken;
-    _dio = Dio(BaseOptions(
-      baseUrl: _baseUrl,
-      connectTimeout: const Duration(seconds: 15),
-      receiveTimeout: const Duration(seconds: 15),
-      headers: {'Content-Type': 'application/json'},
-    ));
-
-    // Log errors in debug mode
-    _dio.interceptors.add(LogInterceptor(
-      requestBody: false,
-      responseBody: false,
-      error: true,
-    ));
+    shared_api.ApiClient.setTokenRefresher(getToken);
   }
 
   /// Returns auth headers with a fresh JWT.
   static Future<Options> _authOptions({bool isMultipart = false}) async {
-    final token = await _getToken();
-    return Options(headers: {
-      'Authorization': 'Bearer $token',
-      if (isMultipart) 'Content-Type': 'multipart/form-data',
-    });
+    return Options(
+      headers: {
+        if (isMultipart) 'Content-Type': 'multipart/form-data',
+      },
+    );
   }
 
   // ── Landlord: Hostels ─────────────────────────────────────────────────────
@@ -582,6 +579,29 @@ class ApiService {
         .map((e) =>
             LandlordNotification.fromApi(e as Map<String, dynamic>))
         .toList();
+  }
+
+  /// GET /landlord/me
+  static Future<LandlordProfile> fetchMyProfile() async {
+    final opts = await _authOptions();
+    final resp = await _dio.get('/landlord/me', options: opts);
+    return LandlordProfile.fromApi(
+      Map<String, dynamic>.from(resp.data['data'] as Map),
+    );
+  }
+
+  /// GET /landlord/notifications/count
+  static Future<int> fetchNotificationCount() async {
+    final opts = await _authOptions();
+    final resp =
+        await _dio.get('/landlord/notifications/count', options: opts);
+    return (resp.data['data']['count'] as num).toInt();
+  }
+
+  /// POST /landlord/notifications/mark-all-read
+  static Future<void> markAllNotificationsRead() async {
+    final opts = await _authOptions();
+    await _dio.post('/landlord/notifications/mark-all-read', options: opts);
   }
 
   // ── Auth ──────────────────────────────────────────────────────────────────

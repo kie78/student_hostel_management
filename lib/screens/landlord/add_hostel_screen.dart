@@ -98,17 +98,19 @@ class _AddHostelScreenState extends State<AddHostelScreen> {
 
       final createdRooms = <LandlordRoom>[];
       for (final room in _rooms) {
-        final created = await ApiService.createRoom(
-          hostelId: createdHostel.id,
-          room: LandlordRoom(
-            id: room.id,
+        for (var index = 0; index < room.roomCount; index++) {
+          final created = await ApiService.createRoom(
             hostelId: createdHostel.id,
-            type: room.type,
-            pricePerMonth: room.pricePerMonth,
-            totalSlots: room.totalSlots,
-          ),
-        );
-        createdRooms.add(created);
+            room: LandlordRoom(
+              id: room.id,
+              hostelId: createdHostel.id,
+              type: room.type,
+              pricePerMonth: room.pricePerMonth,
+              totalSlots: room.totalSlots,
+            ),
+          );
+          createdRooms.add(created);
+        }
       }
 
       final hydrated = LandlordHostel(
@@ -678,6 +680,7 @@ class _RoomTile extends StatelessWidget {
                           color: Color(0xFF0D1147))),
                   const SizedBox(height: 2),
                   Text(
+                    '${room.roomCount} room${room.roomCount != 1 ? 's' : ''}  ·  '
                     '${_formatUGX(room.pricePerMonth)} / sem  ·  '
                     '${room.totalSlots} slot${room.totalSlots != 1 ? 's' : ''}',
                     style: TextStyle(

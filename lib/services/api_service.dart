@@ -68,4 +68,21 @@ class StudentApiService {
     final response = await _dio.get('/student/notifications');
     return response.data['data'] as List<dynamic>;
   }
+
+  /// GET /student/me
+  static Future<Map<String, dynamic>> getMe() async {
+    final response = await _dio.get('/student/me');
+    return Map<String, dynamic>.from(response.data['data'] as Map);
+  }
+
+  /// GET /student/notifications/count
+  static Future<int> getNotificationCount() async {
+    final response = await _dio.get('/student/notifications/count');
+    return (response.data['data']['count'] as num).toInt();
+  }
+
+  /// POST /student/notifications/mark-all-read
+  static Future<void> markAllNotificationsRead() async {
+    await _dio.post('/student/notifications/mark-all-read');
+  }
 }

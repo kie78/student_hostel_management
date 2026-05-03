@@ -14,7 +14,7 @@ class UniversityLandlord {
   final String email;
   final String phone;
   final String whatsappNumber;
-  final List<String> ownershipDocuments; // file names / paths
+  final List<String> ownershipDocuments;
   final String universityId;
   final String landlordCode;
   final String username;
@@ -30,9 +30,9 @@ class UniversityLandlord {
     required this.nin,
     required this.maritalStatus,
     required this.email,
-    required this.phone,
+    this.phone = '',
     required this.whatsappNumber,
-    required this.ownershipDocuments,
+    this.ownershipDocuments = const [],
     required this.universityId,
     required this.landlordCode,
     required this.username,
@@ -154,13 +154,22 @@ class UniversityStore {
 
   // Call this right after login succeeds
   static void setFromApiData(Map<String, dynamic> data) {
+    final profile =
+        data['profile'] is Map<String, dynamic>
+            ? data['profile'] as Map<String, dynamic>
+            : data['profile'] is Map
+                ? Map<String, dynamic>.from(data['profile'] as Map)
+                : data;
+
     currentUniversity = UniversityProfile(
-      id:       data['id']             ?? '',
-      name:     data['universityName'] ?? '',
-      location: data['location']       ?? '',
-      type:     data['type']           ?? '',
-      email:    data['email']          ?? '',
-      joinedAt: DateTime.tryParse(data['createdAt'] ?? '') ?? DateTime.now(),
+      id: data['id'] ?? '',
+      name: profile['universityName'] ?? data['universityName'] ?? '',
+      location: profile['location'] ?? data['location'] ?? '',
+      type: profile['type'] ?? data['type'] ?? '',
+      email: profile['email'] ?? data['email'] ?? '',
+      joinedAt:
+          DateTime.tryParse((data['createdAt'] ?? profile['createdAt'] ?? '').toString()) ??
+              DateTime.now(),
     );
   }
 

@@ -291,22 +291,56 @@ class _UniversityDashboardScreenState extends State<UniversityDashboardScreen>
                                   ),
                                 ],
                               ),
-                              GestureDetector(
-                                onTap: () => setState(() => _currentTab = 3),
-                                child: CircleAvatar(
-                                  radius: 22,
-                                  backgroundColor: Colors.white.withValues(
-                                    alpha: 0.2,
-                                  ),
-                                  child: Text(
-                                    _universityInitials,
-                                    style: TextStyle(
-                                      color: Colors.white,
-                                      fontWeight: FontWeight.w800,
-                                      fontSize: 13,
+                              Row(
+                                children: [
+                                  GestureDetector(
+                                    onTap: _isLoading ? null : _refresh,
+                                    child: Container(
+                                      width: 44,
+                                      height: 44,
+                                      decoration: BoxDecoration(
+                                        color: Colors.white.withValues(
+                                          alpha: 0.16,
+                                        ),
+                                        shape: BoxShape.circle,
+                                      ),
+                                      child: Center(
+                                        child: _isLoading
+                                            ? const SizedBox(
+                                                width: 18,
+                                                height: 18,
+                                                child: CircularProgressIndicator(
+                                                  strokeWidth: 2,
+                                                  color: Colors.white,
+                                                ),
+                                              )
+                                            : const Icon(
+                                                Icons.refresh_rounded,
+                                                color: Colors.white,
+                                                size: 20,
+                                              ),
+                                      ),
                                     ),
                                   ),
-                                ),
+                                  const SizedBox(width: 10),
+                                  GestureDetector(
+                                    onTap: () => setState(() => _currentTab = 3),
+                                    child: CircleAvatar(
+                                      radius: 22,
+                                      backgroundColor: Colors.white.withValues(
+                                        alpha: 0.2,
+                                      ),
+                                      child: Text(
+                                        _universityInitials,
+                                        style: const TextStyle(
+                                          color: Colors.white,
+                                          fontWeight: FontWeight.w800,
+                                          fontSize: 13,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ],
                               ),
                             ],
                           ),
@@ -655,6 +689,19 @@ class _LandlordsTabContentState extends State<_LandlordsTabContent>
     return false;
   }
 
+  String? _landlordUserId(Map<String, dynamic> landlord) {
+    final direct = landlord['userId'];
+    if (direct is String && direct.isNotEmpty) return direct;
+
+    final user = landlord['user'];
+    if (user is Map) {
+      final id = user['id'];
+      if (id is String && id.isNotEmpty) return id;
+    }
+
+    return null;
+  }
+
   void _toggleSuspension(Map<String, dynamic> landlord) {
     final isSuspended = _isLandlordSuspended(landlord);
 
@@ -702,16 +749,47 @@ class _LandlordsTabContentState extends State<_LandlordsTabContent>
     );
 
     if (confirmed == true && mounted) {
-      _toggleSuspension(landlord);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            isSuspended
-                ? '$fullName has been unsuspended.'
-                : '$fullName has been suspended.',
+      final userId = _landlordUserId(landlord);
+      if (userId == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Could not determine the landlord user ID.'),
           ),
-        ),
-      );
+        );
+        return;
+      }
+
+      try {
+        if (isSuspended) {
+          await AuthService.unsuspendLandlord(userId);
+        } else {
+          await AuthService.suspendLandlord(userId);
+        }
+
+        if (!mounted) return;
+
+        _toggleSuspension(landlord);
+        widget.onUpdate();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              isSuspended
+                  ? '$fullName has been unsuspended.'
+                  : '$fullName has been suspended.',
+            ),
+          ),
+        );
+      } on DioException catch (e) {
+        final message = e.response?.data['message']?.toString();
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              message ?? 'Failed to update the landlord status.',
+            ),
+          ),
+        );
+      }
     }
   }
 
@@ -1073,24 +1151,6 @@ class _LandlordApiCard extends StatelessWidget {
                   ],
                 ),
               ),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                decoration: BoxDecoration(
-                  color:
-                      isSuspended
-                          ? Colors.red.withValues(alpha: 0.1)
-                          : const Color(0xFF00C48C).withValues(alpha: 0.1),
-                  borderRadius: BorderRadius.circular(20),
-                ),
-                child: Text(
-                  isSuspended ? 'Suspended' : 'Active',
-                  style: TextStyle(
-                    color: isSuspended ? Colors.red : const Color(0xFF00C48C),
-                    fontSize: 10,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-              ),
             ],
           ),
           const SizedBox(height: 12),
@@ -1116,31 +1176,50 @@ class _LandlordApiCard extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 12),
-          Align(
-            alignment: Alignment.centerRight,
-            child: TextButton.icon(
-              onPressed: onToggleStatus,
-              style: TextButton.styleFrom(
-                foregroundColor:
-                    isSuspended ? const Color(0xFF006B4F) : Colors.red,
-                backgroundColor:
-                    isSuspended
-                        ? const Color(0xFF006B4F).withValues(alpha: 0.08)
-                        : Colors.red.withValues(alpha: 0.08),
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 12,
-                  vertical: 8,
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: isSuspended
+                      ? Colors.red.withValues(alpha: 0.1)
+                      : const Color(0xFF00C48C).withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Text(
+                  isSuspended ? 'Suspended' : 'Active',
+                  style: TextStyle(
+                    color: isSuspended ? Colors.red : const Color(0xFF00C48C),
+                    fontSize: 10,
+                    fontWeight: FontWeight.w700,
+                  ),
                 ),
               ),
-              icon: Icon(
-                isSuspended ? Icons.refresh_rounded : Icons.block_rounded,
-                size: 16,
+              const Spacer(),
+              TextButton.icon(
+                onPressed: onToggleStatus,
+                style: TextButton.styleFrom(
+                  foregroundColor:
+                      isSuspended ? const Color(0xFF006B4F) : Colors.red,
+                  backgroundColor:
+                      isSuspended
+                          ? const Color(0xFF006B4F).withValues(alpha: 0.08)
+                          : Colors.red.withValues(alpha: 0.08),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 8,
+                  ),
+                ),
+                icon: Icon(
+                  isSuspended ? Icons.refresh_rounded : Icons.block_rounded,
+                  size: 16,
+                ),
+                label: Text(
+                  isSuspended ? 'Unsuspend' : 'Suspend',
+                  style: const TextStyle(fontWeight: FontWeight.w700),
+                ),
               ),
-              label: Text(
-                isSuspended ? 'Unsuspend' : 'Suspend',
-                style: const TextStyle(fontWeight: FontWeight.w700),
-              ),
-            ),
+            ],
           ),
         ],
       ),

@@ -168,7 +168,7 @@ void didChangeDependencies() {
     await _configureAuthenticatedSession();
 
     if (resolvedRole == 'university') {
-      await AuthService.loadUniversityProfile(_clerkAuth);
+      await AuthService.loadUniversityProfile();
     }
 
     if (resolvedRole == 'landlord' || resolvedRole == 'university') {

@@ -118,7 +118,13 @@ extension HostelCompat on Hostel {
 // ─── Screen ───────────────────────────────────────────────────────────────────
 
 class HostelListScreen extends StatefulWidget {
-  const HostelListScreen({super.key});
+  final int unreadCount;
+  final VoidCallback? onNotificationTap;
+  const HostelListScreen({
+    super.key,
+    this.unreadCount = 0,
+    this.onNotificationTap,
+  });
 
   @override
   State<HostelListScreen> createState() => _HostelListScreenState();
@@ -285,9 +291,49 @@ class _HostelListScreenState extends State<HostelListScreen>
                 ),
               ),
               actions: [
-                IconButton(
-                  onPressed: _loadHostels,
-                  icon: const Icon(Icons.refresh_outlined, color: Colors.white),
+                GestureDetector(
+                  onTap: widget.onNotificationTap,
+                  child: Padding(
+                    padding: const EdgeInsets.only(right: 12),
+                    child: Stack(
+                      clipBehavior: Clip.none,
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.all(8),
+                          child: const Icon(
+                            Icons.notifications_outlined,
+                            color: Colors.white,
+                            size: 24,
+                          ),
+                        ),
+                        if (widget.unreadCount > 0)
+                          Positioned(
+                            right: 4,
+                            top: 4,
+                            child: Container(
+                              width: 16,
+                              height: 16,
+                              decoration: const BoxDecoration(
+                                color: Color(0xFFFF6B6B),
+                                shape: BoxShape.circle,
+                              ),
+                              child: Center(
+                                child: Text(
+                                  widget.unreadCount > 99
+                                      ? '99+'
+                                      : '${widget.unreadCount}',
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 9,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
                 ),
               ],
             ),

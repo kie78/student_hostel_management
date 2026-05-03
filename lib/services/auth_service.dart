@@ -1,6 +1,5 @@
 import 'package:clerk_auth/clerk_auth.dart' as clerk_auth;
 import 'package:clerk_flutter/clerk_flutter.dart';
-import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:student_hostel_management/screens/university/university_models.dart';
 import 'api_client.dart';
@@ -70,6 +69,17 @@ class AuthService {
     await auth.signOut();
     ApiClient.clearToken();
   }
+
+static Future<Map<String, dynamic>> getStudentMe() async {
+  final response = await _dio.get('/student/me');
+  return Map<String, dynamic>.from(response.data['data'] as Map);
+}
+
+static Future<Map<String, dynamic>> getUniversityMe() async {
+  final response = await _dio.get('/university/me');
+  return Map<String, dynamic>.from(response.data['data'] as Map);
+}
+
   // Fetch universities — public endpoint, no token needed
 static Future<List<dynamic>> getUniversities() async {
   final response = await _dio.get('/student/universities');
@@ -130,25 +140,28 @@ static Future<Map<String, dynamic>> registerLandlord({
   required String whatsappNumber,
   required String email,
   required String password,
-  List<String>? documentLabels, // document names only for now
 }) async {
-  final formData = FormData.fromMap({
-    'full_name': fullName,
-    'gender': gender.toLowerCase(),
-    'nin': nin,
-    'marital_status': maritalStatus.toLowerCase(),
-    'whatsapp_number': whatsappNumber,
-    'email': email,
-    'password': password,
-    if (documentLabels != null) 'document_labels': documentLabels,
-  });
-
   final response = await _dio.post(
     '/university/landlords',
-    data: formData,
-    options: Options(contentType: 'multipart/form-data'),
+    data: {
+      'full_name': fullName,
+      'gender': gender.toLowerCase(),
+      'nin': nin,
+      'marital_status': maritalStatus.toLowerCase(),
+      'whatsapp_number': whatsappNumber,
+      'email': email,
+      'password': password,
+    },
   );
   return response.data;
+}
+
+static Future<void> suspendLandlord(String userId) async {
+  await _dio.patch('/university/landlords/$userId/suspend');
+}
+
+static Future<void> unsuspendLandlord(String userId) async {
+  await _dio.patch('/university/landlords/$userId/unsuspend');
 }
 
 static Future<void> resetPasswordUniversity({
@@ -163,25 +176,11 @@ static Future<void> resetPasswordUniversity({
 static Future<void> logoutUniversity() async {
   await _dio.post('/university/auth/logout');
 }
-// Fetch current university profile from session claims
-// Called once after login to populate UniversityStore
-static Future<void> loadUniversityProfile(
-    ClerkAuthState auth) async {
+// Fetch current university profile from /university/me.
+static Future<void> loadUniversityProfile() async {
   try {
-    final claims = auth.session?.publicUserData.toJson();
-
-    // Backend should set these in Clerk's public metadata
-    // Keys may vary — confirm with your backend dev
-    final profileData = {
-      'id':             claims?['universityId']   ?? '',
-      'universityName': claims?['universityName'] ?? '',
-      'location':       claims?['location']       ?? '',
-      'type':           claims?['type']           ?? '',
-      'email':          claims?['email']          ?? '',
-      'createdAt':      claims?['createdAt']      ?? '',
-    };
-
-    UniversityStore.setFromApiData(profileData);
+    final me = await getUniversityMe();
+    UniversityStore.setFromApiData(me);
   } catch (e) {
     debugPrint('Failed to load university profile: $e');
   }

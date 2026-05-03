@@ -39,7 +39,13 @@ class _StudentDashboardScreenState extends State<StudentDashboardScreen> {
   Widget _buildCurrentTab() {
     switch (_currentTab) {
       case 0:
-        return const HostelListScreen();
+        return HostelListScreen(
+          unreadCount: _unreadNotifications,
+          onNotificationTap: () {
+            _setUnread(0);
+            _onTabChange(2);
+          },
+        );
       case 1:
         return const _StudentBookingsTab();
       case 2:
@@ -508,6 +514,7 @@ class _StudentNotificationsTab extends StatefulWidget {
 class _StudentNotificationsTabState extends State<_StudentNotificationsTab> {
   List<Map<String, dynamic>> _notifications = [];
   bool _isLoading = true;
+  bool _isMarkingAllRead = false;
 
   @override
   void initState() {
@@ -526,6 +533,23 @@ class _StudentNotificationsTabState extends State<_StudentNotificationsTab> {
       // silently fail — notifications are non-critical
     } finally {
       if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  Future<void> _markAllRead() async {
+    setState(() => _isMarkingAllRead = true);
+    try {
+      await StudentApiService.markAllNotificationsRead();
+      setState(() {
+        _notifications = _notifications
+            .map((n) => {...n, 'isRead': true})
+            .toList();
+      });
+      widget.onUnreadCount(0);
+    } catch (_) {
+      // silently fail
+    } finally {
+      if (mounted) setState(() => _isMarkingAllRead = false);
     }
   }
 
@@ -568,6 +592,21 @@ class _StudentNotificationsTabState extends State<_StudentNotificationsTab> {
         title: const Text('Notifications',
             style: TextStyle(fontWeight: FontWeight.w700)),
         actions: [
+          if (_notifications.isNotEmpty &&
+              _notifications.any((n) => n['isRead'] == false))
+            TextButton(
+              onPressed: _isMarkingAllRead ? null : _markAllRead,
+              child: _isMarkingAllRead
+                  ? const SizedBox(
+                      width: 14,
+                      height: 14,
+                      child: CircularProgressIndicator(
+                          strokeWidth: 2, color: Colors.white70),
+                    )
+                  : const Text('Mark all read',
+                      style: TextStyle(
+                          color: Colors.white70, fontSize: 12)),
+            ),
           IconButton(
             icon: const Icon(Icons.refresh_outlined),
             onPressed: _loadNotifications,
@@ -693,9 +732,17 @@ class _StudentNotificationsTabState extends State<_StudentNotificationsTab> {
 
 // ─── Profile Tab ───────────────────────────────────────────────────────────────
 
-class _StudentProfileTab extends StatelessWidget {
+class _StudentProfileTab extends StatefulWidget {
   final void Function(int) onTabChange;
   const _StudentProfileTab({required this.onTabChange});
+
+  @override
+  State<_StudentProfileTab> createState() => _StudentProfileTabState();
+}
+
+class _StudentProfileTabState extends State<_StudentProfileTab> {
+  bool _isLoggingOut = false;
+  Map<String, dynamic>? _profile;
 
   String _metadataValue(
     Map<String, dynamic>? metadata,
@@ -711,16 +758,55 @@ class _StudentProfileTab extends StatelessWidget {
     return '';
   }
 
+  String _mapValue(Map<String, dynamic>? data, List<String> keys) {
+    if (data == null) return '';
+    for (final key in keys) {
+      final value = data[key];
+      if (value is String && value.trim().isNotEmpty) {
+        return value.trim();
+      }
+    }
+    return '';
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _loadProfile();
+  }
+
+  Future<void> _loadProfile() async {
+    try {
+      final me = await StudentApiService.getMe();
+      if (!mounted) return;
+      setState(() => _profile = me);
+    } catch (_) {
+      // Keep Clerk metadata fallback if /student/me is unavailable.
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final auth = ClerkAuth.of(context, listen: false);
     final user = auth.user;
     final publicMetadata = user?.publicMetadata;
     final unsafeMetadata = user?.unsafeMetadata;
+    final rawProfile = _profile?['profile'];
+    final profileData =
+      rawProfile is Map<String, dynamic>
+        ? rawProfile
+        : rawProfile is Map
+          ? Map<String, dynamic>.from(rawProfile)
+                : null;
     final submittedSurname = _metadataValue(
-      publicMetadata,
-      const ['surname', 'lastName', 'last_name'],
+      profileData,
+      const ['surname'],
     ).isNotEmpty
+        ? _mapValue(profileData, const ['surname'])
+        : _metadataValue(
+            publicMetadata,
+            const ['surname', 'lastName', 'last_name'],
+          ).isNotEmpty
         ? _metadataValue(
             publicMetadata,
             const ['surname', 'lastName', 'last_name'],
@@ -730,9 +816,14 @@ class _StudentProfileTab extends StatelessWidget {
             const ['surname', 'lastName', 'last_name'],
           );
     final submittedOtherNames = _metadataValue(
-      publicMetadata,
-      const ['otherNames', 'other_names', 'firstName', 'first_name'],
+      profileData,
+      const ['otherNames'],
     ).isNotEmpty
+        ? _mapValue(profileData, const ['otherNames'])
+        : _metadataValue(
+            publicMetadata,
+            const ['otherNames', 'other_names', 'firstName', 'first_name'],
+          ).isNotEmpty
         ? _metadataValue(
             publicMetadata,
             const ['otherNames', 'other_names', 'firstName', 'first_name'],
@@ -742,9 +833,14 @@ class _StudentProfileTab extends StatelessWidget {
             const ['otherNames', 'other_names', 'firstName', 'first_name'],
           );
     final submittedEmail = _metadataValue(
-      publicMetadata,
-      const ['studentEmail', 'student_email', 'email'],
+      profileData,
+      const ['studentEmail'],
     ).isNotEmpty
+        ? _mapValue(profileData, const ['studentEmail'])
+        : _metadataValue(
+            publicMetadata,
+            const ['studentEmail', 'student_email', 'email'],
+          ).isNotEmpty
         ? _metadataValue(
             publicMetadata,
             const ['studentEmail', 'student_email', 'email'],
@@ -753,6 +849,11 @@ class _StudentProfileTab extends StatelessWidget {
             unsafeMetadata,
             const ['studentEmail', 'student_email', 'email'],
           );
+    final registrationNumber = _mapValue(
+      profileData,
+      const ['registrationNumber'],
+    );
+    final gender = _mapValue(profileData, const ['gender']);
     final fallbackEmail =
         (user?.emailAddresses ?? []).firstOrNull?.emailAddress ?? '';
     final fallbackFirstName = user?.firstName ?? '';
@@ -850,6 +951,15 @@ class _StudentProfileTab extends StatelessWidget {
             // Info rows
             if (fullName.isNotEmpty)
               _ProfileRow(label: 'Full Name', value: fullName),
+            if (registrationNumber.isNotEmpty)
+              _ProfileRow(
+                label: 'Registration Number',
+                value: registrationNumber,
+              ),
+            if (gender.isNotEmpty)
+              _ProfileRow(label: 'Gender', value: gender),
+            if (email.isNotEmpty)
+              _ProfileRow(label: 'Email', value: email),
 
             const SizedBox(height: 24),
 
@@ -864,28 +974,29 @@ class _StudentProfileTab extends StatelessWidget {
               icon: Icons.home_rounded,
               label: 'Browse Hostels',
               color: const Color(0xFF1A1F71),
-              onTap: () => onTabChange(0),
+              onTap: () => widget.onTabChange(0),
             ),
             const SizedBox(height: 8),
             _ActionTile(
               icon: Icons.book_online_rounded,
               label: 'My Bookings',
               color: const Color(0xFF006B4F),
-              onTap: () => onTabChange(1),
+              onTap: () => widget.onTabChange(1),
             ),
             const SizedBox(height: 8),
             _ActionTile(
               icon: Icons.notifications_rounded,
               label: 'Alerts',
               color: const Color(0xFFB45309),
-              onTap: () => onTabChange(2),
+              onTap: () => widget.onTabChange(2),
             ),
             const SizedBox(height: 24),
 
             // Logout
             GestureDetector(
-              onTap: () => _logout(context),
-              child: Container(
+              onTap: _isLoggingOut ? null : _logout,
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 200),
                 width: double.infinity,
                 padding: const EdgeInsets.symmetric(vertical: 16),
                 decoration: BoxDecoration(
@@ -894,17 +1005,27 @@ class _StudentProfileTab extends StatelessWidget {
                   border: Border.all(
                       color: Colors.red.withValues(alpha: 0.2)),
                 ),
-                child: const Row(
+                child: Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    Icon(Icons.logout_rounded,
-                        color: Colors.red, size: 20),
-                    SizedBox(width: 8),
-                    Text('Log Out',
-                        style: TextStyle(
-                            color: Colors.red,
-                            fontWeight: FontWeight.w700,
-                            fontSize: 15)),
+                    if (_isLoggingOut)
+                      const SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(
+                            strokeWidth: 2, color: Colors.red),
+                      )
+                    else
+                      const Icon(Icons.logout_rounded,
+                          color: Colors.red, size: 20),
+                    const SizedBox(width: 8),
+                    Text(
+                      _isLoggingOut ? 'Signing out...' : 'Log Out',
+                      style: const TextStyle(
+                          color: Colors.red,
+                          fontWeight: FontWeight.w700,
+                          fontSize: 15),
+                    ),
                   ],
                 ),
               ),
@@ -915,7 +1036,7 @@ class _StudentProfileTab extends StatelessWidget {
     );
   }
 
-  Future<void> _logout(BuildContext context) async {
+  Future<void> _logout() async {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (_) => AlertDialog(
@@ -932,14 +1053,25 @@ class _StudentProfileTab extends StatelessWidget {
         ],
       ),
     );
-    if (confirmed == true && context.mounted) {
-      final auth = ClerkAuth.of(context, listen: false);
-      await AuthService.logout(auth: auth, role: 'student');
-      if (context.mounted) {
+    if (confirmed == true && mounted) {
+      setState(() => _isLoggingOut = true);
+      try {
+        final auth = ClerkAuth.of(context, listen: false);
+        await AuthService.logout(auth: auth, role: 'student');
+        if (!mounted) return;
         Navigator.pushAndRemoveUntil(
           context,
           MaterialPageRoute(builder: (_) => const RoleSelectScreen()),
           (route) => false,
+        );
+      } catch (_) {
+        if (!mounted) return;
+        setState(() => _isLoggingOut = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Failed to sign out. Please try again.'),
+            backgroundColor: Colors.red,
+          ),
         );
       }
     }

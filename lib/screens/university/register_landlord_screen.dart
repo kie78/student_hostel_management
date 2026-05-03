@@ -18,27 +18,17 @@ class _RegisterLandlordScreenState extends State<RegisterLandlordScreen>
 
   // Step control
   int _currentStep = 0;
-  final int _totalSteps = 3;
+  final int _totalSteps = 2;
 
   // Step 1 — Personal Info
   final _fullNameController = TextEditingController();
-  final _phoneController = TextEditingController();
   final _whatsappController = TextEditingController();
   final _emailController = TextEditingController();
   String? _selectedGender;
   String? _selectedMaritalStatus;
-
-  // Step 2 — Identification
   final _ninController = TextEditingController();
-  final List<String> _documents = [];
-  final List<String> _documentLabels = [
-    'Ownership Deed / Title',
-    'National ID (NIN card)',
-    'Utility Bill',
-    'Lease Agreement',
-  ];
 
-  // Step 3 — Preview
+  // Step 2 — Preview
   bool _isLoading = false;
 
   late AnimationController _stepController;
@@ -87,7 +77,6 @@ class _RegisterLandlordScreenState extends State<RegisterLandlordScreen>
     _stepController.dispose();
     _scrollController.dispose();
     _fullNameController.dispose();
-    _phoneController.dispose();
     _whatsappController.dispose();
     _emailController.dispose();
     _ninController.dispose();
@@ -112,13 +101,17 @@ class _RegisterLandlordScreenState extends State<RegisterLandlordScreen>
       _snack('Full name is required');
       return false;
     }
+    if (_ninController.text.trim().length < 14) {
+      _snack('Enter a valid NIN (14 characters)');
+      return false;
+    }
     if (_emailController.text.trim().isEmpty ||
         !_emailController.text.contains('@')) {
       _snack('Valid email is required');
       return false;
     }
-    if (_phoneController.text.trim().length < 10) {
-      _snack('Valid phone number is required');
+    if (_whatsappController.text.trim().length < 10) {
+      _snack('Valid WhatsApp number is required');
       return false;
     }
     if (_selectedGender == null) {
@@ -132,21 +125,8 @@ class _RegisterLandlordScreenState extends State<RegisterLandlordScreen>
     return true;
   }
 
-  bool _validateStep2() {
-    if (_ninController.text.trim().length < 14) {
-      _snack('Enter a valid NIN (14 characters)');
-      return false;
-    }
-    if (_documents.isEmpty) {
-      _snack('Please attach at least one ownership document');
-      return false;
-    }
-    return true;
-  }
-
   void _nextStep() {
     if (_currentStep == 0 && !_validateStep1()) return;
-    if (_currentStep == 1 && !_validateStep2()) return;
     if (_currentStep < _totalSteps - 1) {
       setState(() => _currentStep++);
       _animateStep();
@@ -171,12 +151,9 @@ class _RegisterLandlordScreenState extends State<RegisterLandlordScreen>
         gender: _selectedGender!,
         nin: _ninController.text.trim().toUpperCase(),
         maritalStatus: _selectedMaritalStatus!,
-        whatsappNumber: _whatsappController.text.trim().isNotEmpty
-            ? _whatsappController.text.trim()
-            : _phoneController.text.trim(),
+        whatsappNumber: _whatsappController.text.trim(),
         email: _emailController.text.trim(),
         password: _generateTempPassword(),
-        documentLabels: _documents,
       );
 
       if (!mounted) return;
@@ -190,9 +167,7 @@ class _RegisterLandlordScreenState extends State<RegisterLandlordScreen>
         nin: _ninController.text.trim().toUpperCase(),
         maritalStatus: _selectedMaritalStatus!,
         email: landlordData['email'],
-        phone: _phoneController.text.trim(),
         whatsappNumber: _whatsappController.text.trim(),
-        ownershipDocuments: _documents,
         universityId: '',
         landlordCode: landlordData['landlordCode'],
         username: landlordData['fullName']
@@ -241,14 +216,6 @@ class _RegisterLandlordScreenState extends State<RegisterLandlordScreen>
         ),
       );
 
-  void _toggleDocument(String label) {
-    setState(() {
-      _documents.contains(label)
-          ? _documents.remove(label)
-          : _documents.add(label);
-    });
-  }
-
   @override
   Widget build(BuildContext context) {
     return AnnotatedRegion<SystemUiOverlayStyle>(
@@ -280,7 +247,7 @@ class _RegisterLandlordScreenState extends State<RegisterLandlordScreen>
   }
 
   Widget _buildHeader() {
-    final titles = ['Personal Details', 'Identification', 'Preview & Submit'];
+    final titles = ['Personal Details', 'Preview & Submit'];
     return Container(
       decoration: const BoxDecoration(
         gradient: LinearGradient(
@@ -358,7 +325,7 @@ class _RegisterLandlordScreenState extends State<RegisterLandlordScreen>
   }
 
   Widget _buildStepIndicator() {
-    final steps = ['Personal', 'ID & Docs', 'Preview'];
+    final steps = ['Personal', 'Preview'];
     return Container(
       color: Colors.white,
       padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
@@ -432,8 +399,6 @@ class _RegisterLandlordScreenState extends State<RegisterLandlordScreen>
       case 0:
         return _buildStep1();
       case 1:
-        return _buildStep2();
-      case 2:
         return _buildStep3();
       default:
         return const SizedBox();
@@ -460,6 +425,61 @@ class _RegisterLandlordScreenState extends State<RegisterLandlordScreen>
               v == null || v.trim().isEmpty ? 'Full name is required' : null,
         ),
         const SizedBox(height: 14),
+        TextFormField(
+          controller: _ninController,
+          textCapitalization: TextCapitalization.characters,
+          maxLength: 14,
+          inputFormatters: [
+            FilteringTextInputFormatter.allow(RegExp(r'[a-zA-Z0-9]')),
+            UpperCaseTextFormatter(),
+          ],
+          style: const TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.w700,
+              letterSpacing: 2,
+              color: Color(0xFF0D1147)),
+          decoration: InputDecoration(
+            labelText: 'National ID Number (NIN)',
+            hintText: 'e.g. CM9200105734DH',
+            prefixIcon: const Icon(Icons.badge_outlined,
+                color: Color(0xFF7B2FF7), size: 20),
+            filled: true,
+            fillColor: Colors.white,
+            labelStyle:
+                TextStyle(color: Colors.grey.shade500, fontSize: 13),
+            hintStyle: TextStyle(
+                color: Colors.grey.shade300,
+                fontSize: 13,
+                letterSpacing: 0),
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(14),
+              borderSide: BorderSide(color: Colors.grey.shade200),
+            ),
+            enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(14),
+              borderSide: BorderSide(color: Colors.grey.shade200),
+            ),
+            focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(14),
+              borderSide:
+                  const BorderSide(color: Color(0xFF7B2FF7), width: 1.5),
+            ),
+            contentPadding:
+                const EdgeInsets.symmetric(horizontal: 16, vertical: 15),
+          ),
+        ),
+        const SizedBox(height: 6),
+        Row(
+          children: [
+            Icon(Icons.info_outline, size: 12, color: Colors.grey.shade400),
+            const SizedBox(width: 5),
+            Text(
+              'The NIN is found on the national ID card (14 characters).',
+              style: TextStyle(fontSize: 11, color: Colors.grey.shade400),
+            ),
+          ],
+        ),
+        const SizedBox(height: 14),
         _Fld(
           controller: _emailController,
           label: 'Email Address',
@@ -474,37 +494,17 @@ class _RegisterLandlordScreenState extends State<RegisterLandlordScreen>
         ),
         const SizedBox(height: 14),
         _Fld(
-          controller: _phoneController,
-          label: 'Phone Number',
-          hint: 'e.g. 0701234567',
-          icon: Icons.phone_outlined,
-          keyboardType: TextInputType.phone,
-          inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-          validator: (v) {
-            if (v == null || v.trim().isEmpty) return 'Phone is required';
-            if (v.length < 10) return 'Enter a valid phone number';
-            return null;
-          },
-        ),
-        const SizedBox(height: 14),
-        _Fld(
           controller: _whatsappController,
-          label: 'WhatsApp Number (optional)',
+          label: 'WhatsApp Number',
           hint: 'e.g. 256701234567 (with country code)',
           icon: Icons.chat_outlined,
           keyboardType: TextInputType.phone,
           inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-        ),
-        const SizedBox(height: 6),
-        Row(
-          children: [
-            Icon(Icons.info_outline, size: 12, color: Colors.grey.shade400),
-            const SizedBox(width: 5),
-            Text(
-              'Leave blank to use phone number as WhatsApp.',
-              style: TextStyle(fontSize: 11, color: Colors.grey.shade400),
-            ),
-          ],
+          validator: (v) {
+            if (v == null || v.trim().isEmpty) return 'WhatsApp number is required';
+            if (v.length < 10) return 'Enter a valid WhatsApp number';
+            return null;
+          },
         ),
         const SizedBox(height: 20),
         _Lbl(icon: Icons.wc_outlined, label: 'Gender'),
@@ -594,242 +594,6 @@ class _RegisterLandlordScreenState extends State<RegisterLandlordScreen>
     );
   }
 
-  // ── Step 2: Identification & Documents ────────────────────────────────────
-
-  Widget _buildStep2() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        _Lbl(
-            icon: Icons.badge_outlined,
-            label: 'National Identification'),
-        const SizedBox(height: 14),
-        TextFormField(
-          controller: _ninController,
-          textCapitalization: TextCapitalization.characters,
-          maxLength: 14,
-          inputFormatters: [
-            FilteringTextInputFormatter.allow(RegExp(r'[a-zA-Z0-9]')),
-            UpperCaseTextFormatter(),
-          ],
-          style: const TextStyle(
-              fontSize: 16,
-              fontWeight: FontWeight.w700,
-              letterSpacing: 2,
-              color: Color(0xFF0D1147)),
-          decoration: InputDecoration(
-            labelText: 'National ID Number (NIN)',
-            hintText: 'e.g. CM9200105734DH',
-            prefixIcon: const Icon(Icons.badge_outlined,
-                color: Color(0xFF7B2FF7), size: 20),
-            filled: true,
-            fillColor: Colors.white,
-            labelStyle:
-                TextStyle(color: Colors.grey.shade500, fontSize: 13),
-            hintStyle: TextStyle(
-                color: Colors.grey.shade300,
-                fontSize: 13,
-                letterSpacing: 0),
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(14),
-              borderSide: BorderSide(color: Colors.grey.shade200),
-            ),
-            enabledBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(14),
-              borderSide: BorderSide(color: Colors.grey.shade200),
-            ),
-            focusedBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(14),
-              borderSide:
-                  const BorderSide(color: Color(0xFF7B2FF7), width: 1.5),
-            ),
-            contentPadding:
-                const EdgeInsets.symmetric(horizontal: 16, vertical: 15),
-          ),
-        ),
-        const SizedBox(height: 6),
-        Row(
-          children: [
-            Icon(Icons.info_outline, size: 12, color: Colors.grey.shade400),
-            const SizedBox(width: 5),
-            Text(
-              'The NIN is found on the national ID card (14 characters).',
-              style: TextStyle(fontSize: 11, color: Colors.grey.shade400),
-            ),
-          ],
-        ),
-        const SizedBox(height: 24),
-        _Lbl(icon: Icons.folder_outlined, label: 'Ownership Documents'),
-        const SizedBox(height: 6),
-        Text(
-          'Select all documents the landlord is providing. Actual files will be uploaded when backend is connected.',
-          style: TextStyle(
-              fontSize: 12, color: Colors.grey.shade500, height: 1.5),
-        ),
-        const SizedBox(height: 14),
-        Container(
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(14),
-            border: Border.all(color: Colors.grey.shade200),
-          ),
-          child: Column(
-            children: _documentLabels.asMap().entries.map((entry) {
-              final i = entry.key;
-              final label = entry.value;
-              final isChecked = _documents.contains(label);
-              final icons = [
-                Icons.description_outlined,
-                Icons.badge_outlined,
-                Icons.receipt_outlined,
-                Icons.handshake_outlined,
-              ];
-
-              return Column(
-                children: [
-                  GestureDetector(
-                    onTap: () => _toggleDocument(label),
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 16, vertical: 14),
-                      child: Row(
-                        children: [
-                          Container(
-                            padding: const EdgeInsets.all(8),
-                            decoration: BoxDecoration(
-                              color: isChecked
-                                  ? const Color(0xFF7B2FF7).withValues(alpha: 0.1)
-                                  : Colors.grey.shade100,
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            child: Icon(icons[i],
-                                color: isChecked
-                                    ? const Color(0xFF7B2FF7)
-                                    : Colors.grey.shade400,
-                                size: 18),
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: Text(label,
-                                style: TextStyle(
-                                  fontSize: 13,
-                                  fontWeight: isChecked
-                                      ? FontWeight.w600
-                                      : FontWeight.w400,
-                                  color: isChecked
-                                      ? const Color(0xFF0D1147)
-                                      : Colors.grey.shade600,
-                                )),
-                          ),
-                          AnimatedContainer(
-                            duration: const Duration(milliseconds: 200),
-                            width: 22,
-                            height: 22,
-                            decoration: BoxDecoration(
-                              shape: BoxShape.circle,
-                              color: isChecked
-                                  ? const Color(0xFF7B2FF7)
-                                  : Colors.transparent,
-                              border: Border.all(
-                                color: isChecked
-                                    ? const Color(0xFF7B2FF7)
-                                    : Colors.grey.shade300,
-                                width: 1.5,
-                              ),
-                            ),
-                            child: isChecked
-                                ? const Icon(Icons.check,
-                                    color: Colors.white, size: 13)
-                                : null,
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                  if (i < _documentLabels.length - 1)
-                    Divider(
-                        height: 1,
-                        indent: 16,
-                        color: Colors.grey.shade100),
-                ],
-              );
-            }).toList(),
-          ),
-        ),
-        const SizedBox(height: 12),
-        AnimatedContainer(
-          duration: const Duration(milliseconds: 200),
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(
-            color: _documents.isEmpty
-                ? Colors.red.shade50
-                : const Color(0xFFE8F5EF),
-            borderRadius: BorderRadius.circular(10),
-            border: Border.all(
-              color: _documents.isEmpty
-                  ? Colors.red.shade200
-                  : const Color(0xFF00C48C).withValues(alpha: 0.3),
-            ),
-          ),
-          child: Row(
-            children: [
-              Icon(
-                _documents.isEmpty
-                    ? Icons.warning_amber_outlined
-                    : Icons.check_circle_outline,
-                color: _documents.isEmpty
-                    ? Colors.red.shade600
-                    : const Color(0xFF00C48C),
-                size: 16,
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  _documents.isEmpty
-                      ? 'No documents selected — at least one required'
-                      : '${_documents.length} document(s) selected: ${_documents.join(', ')}',
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: _documents.isEmpty
-                        ? Colors.red.shade700
-                        : const Color(0xFF006B4F),
-                    height: 1.4,
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(height: 20),
-        Container(
-          padding: const EdgeInsets.all(14),
-          decoration: BoxDecoration(
-            color: const Color(0xFFF3EEFF),
-            borderRadius: BorderRadius.circular(12),
-            border:
-                Border.all(color: const Color(0xFF7B2FF7).withValues(alpha: 0.2)),
-          ),
-          child: Row(
-            children: [
-              const Icon(Icons.upload_file_outlined,
-                  color: Color(0xFF7B2FF7), size: 18),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Text(
-                  'Physical document upload will be available once the backend is connected. For now, select which documents the landlord has presented.',
-                  style: TextStyle(
-                      fontSize: 12,
-                      color: Colors.purple.shade700,
-                      height: 1.5),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ],
-    );
-  }
-
   // ── Step 3: Preview & Submit ──────────────────────────────────────────────
 
   Widget _buildStep3() {
@@ -850,9 +614,7 @@ class _RegisterLandlordScreenState extends State<RegisterLandlordScreen>
           rows: [
             _Row2('Full Name', _fullNameController.text.trim()),
             _Row2('Email', _emailController.text.trim()),
-            _Row2('Phone', _phoneController.text.trim()),
-            if (_whatsappController.text.trim().isNotEmpty)
-              _Row2('WhatsApp', _whatsappController.text.trim()),
+            _Row2('WhatsApp', _whatsappController.text.trim()),
             _Row2('Gender', _selectedGender ?? '—'),
             _Row2('Marital Status', _selectedMaritalStatus ?? '—'),
           ],
@@ -864,7 +626,6 @@ class _RegisterLandlordScreenState extends State<RegisterLandlordScreen>
           color: const Color(0xFF1A1F71),
           rows: [
             _Row2('NIN', _ninController.text.trim().toUpperCase()),
-            _Row2('Documents', _documents.join(', ')),
           ],
         ),
         const SizedBox(height: 12),

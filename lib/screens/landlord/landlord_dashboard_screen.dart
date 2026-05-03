@@ -28,6 +28,8 @@ class _LandlordDashboardScreenState extends State<LandlordDashboardScreen>
     with TickerProviderStateMixin {
   int _currentTab = 0;
   bool _isLoading = false;
+  bool _isLoggingOut = false;
+  int _unreadBadgeCount = 0;
   String? _errorMessage;
 
   late AnimationController _entryController;
@@ -73,13 +75,16 @@ class _LandlordDashboardScreenState extends State<LandlordDashboardScreen>
       LandlordStore.setHostels(hostels);
 
       final results = await Future.wait([
+        ApiService.fetchMyProfile(),
         ApiService.fetchAllBookings(hostels),
         ApiService.fetchNotifications(),
       ]);
 
-      LandlordStore.setBookings(results[0] as List<LandlordBooking>);
+      LandlordStore.setProfile(results[0] as LandlordProfile);
+      LandlordStore.setBookings(results[1] as List<LandlordBooking>);
       LandlordStore.setNotifications(
-          results[1] as List<LandlordNotification>);
+          results[2] as List<LandlordNotification>);
+      _unreadBadgeCount = LandlordStore.unreadNotifications;
     } catch (e) {
       setState(() => _errorMessage = _friendlyError(e));
     } finally {
@@ -216,27 +221,10 @@ class _LandlordDashboardScreenState extends State<LandlordDashboardScreen>
     _loadDashboard();
   }
 
-  Future<void> _confirmLogout() async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (_) => AlertDialog(
-        title: const Text('Log Out'),
-        content: const Text('Are you sure you want to log out?'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancel'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(context, true),
-            style: TextButton.styleFrom(foregroundColor: Colors.red),
-            child: const Text('Log Out'),
-          ),
-        ],
-      ),
-    );
-
-    if (confirmed == true && mounted) {
+  Future<void> _doLogout() async {
+    if (_isLoggingOut) return;
+    setState(() => _isLoggingOut = true);
+    try {
       final auth = ClerkAuth.of(context, listen: false);
       await AuthService.logout(auth: auth, role: 'landlord');
       LandlordStore.clear();
@@ -246,7 +234,55 @@ class _LandlordDashboardScreenState extends State<LandlordDashboardScreen>
         MaterialPageRoute(builder: (_) => const RoleSelectScreen()),
         (route) => false,
       );
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _isLoggingOut = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Failed to sign out. Please try again.'),
+          backgroundColor: Colors.red,
+        ),
+      );
     }
+  }
+
+  void _confirmLogout() {
+    showDialog(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          title: const Text('Log Out',
+              style: TextStyle(fontWeight: FontWeight.w800)),
+          content: const Text('Are you sure you want to log out?'),
+          actions: [
+            TextButton(
+              onPressed: _isLoggingOut ? null : () => Navigator.pop(dialogContext),
+              child: Text('Cancel',
+                  style: TextStyle(color: Colors.grey.shade600)),
+            ),
+            TextButton(
+              onPressed: _isLoggingOut
+                  ? null
+                  : () async {
+                      Navigator.pop(dialogContext);
+                      await _doLogout();
+                    },
+              child: _isLoggingOut
+                  ? const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(
+                          strokeWidth: 2, color: Colors.red),
+                    )
+                  : const Text('Log Out',
+                      style: TextStyle(
+                          color: Colors.red, fontWeight: FontWeight.w700)),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   // ── Build ─────────────────────────────────────────────────────────────────
@@ -403,7 +439,10 @@ class _LandlordDashboardScreenState extends State<LandlordDashboardScreen>
                     ],
                   ),
                   GestureDetector(
-                    onTap: () => setState(() => _currentTab = 2),
+                    onTap: () => setState(() {
+                      _currentTab = 2;
+                      _unreadBadgeCount = 0;
+                    }),
                     child: Stack(
                       children: [
                         Container(
@@ -418,7 +457,7 @@ class _LandlordDashboardScreenState extends State<LandlordDashboardScreen>
                             size: 22,
                           ),
                         ),
-                        if (LandlordStore.unreadNotifications > 0)
+                        if (_unreadBadgeCount > 0)
                           Positioned(
                             right: 0,
                             top: 0,
@@ -431,7 +470,9 @@ class _LandlordDashboardScreenState extends State<LandlordDashboardScreen>
                               ),
                               child: Center(
                                 child: Text(
-                                  '${LandlordStore.unreadNotifications}',
+                                  _unreadBadgeCount > 99
+                                      ? '99+'
+                                      : '$_unreadBadgeCount',
                                   style: const TextStyle(
                                     color: Colors.white,
                                     fontSize: 9,
@@ -728,9 +769,12 @@ class _LandlordDashboardScreenState extends State<LandlordDashboardScreen>
         actions: [
           if (LandlordStore.unreadNotifications > 0)
             TextButton(
-              onPressed: () {
+              onPressed: () async {
                 LandlordStore.markAllNotificationsRead();
-                setState(() {});
+                setState(() => _unreadBadgeCount = 0);
+                try {
+                  await ApiService.markAllNotificationsRead();
+                } catch (_) {}
               },
               child: const Text('Mark all read',
                   style: TextStyle(
@@ -926,9 +970,10 @@ class _LandlordDashboardScreenState extends State<LandlordDashboardScreen>
                 Expanded(
                   child: _ProfileActionCard(
                     title: 'Logout',
-                    subtitle: 'Sign out safely',
+                    subtitle: _isLoggingOut ? 'Signing out...' : 'Sign out safely',
                     icon: Icons.logout_rounded,
                     color: const Color(0xFFB91C1C),
+                    isLoading: _isLoggingOut,
                     onTap: _confirmLogout,
                   ),
                 ),
@@ -1037,6 +1082,7 @@ class _ProfileActionCard extends StatelessWidget {
   final IconData icon;
   final Color color;
   final VoidCallback onTap;
+  final bool isLoading;
 
   const _ProfileActionCard({
     required this.title,
@@ -1044,6 +1090,7 @@ class _ProfileActionCard extends StatelessWidget {
     required this.icon,
     required this.color,
     required this.onTap,
+    this.isLoading = false,
   });
 
   @override
@@ -1072,7 +1119,14 @@ class _ProfileActionCard extends StatelessWidget {
                 color: color.withValues(alpha: 0.12),
                 borderRadius: BorderRadius.circular(12),
               ),
-              child: Icon(icon, color: color, size: 20),
+              child: isLoading
+                  ? SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(
+                          strokeWidth: 2, color: color),
+                    )
+                  : Icon(icon, color: color, size: 20),
             ),
             const SizedBox(width: 12),
             Expanded(

@@ -25,6 +25,7 @@ class AddRoomScreen extends StatefulWidget {
 class _AddRoomScreenState extends State<AddRoomScreen> {
   final _formKey = GlobalKey<FormState>();
   final _priceController = TextEditingController();
+  int _roomCount = 1;
 
   @override
   void dispose() {
@@ -54,6 +55,7 @@ class _AddRoomScreenState extends State<AddRoomScreen> {
           double.parse(_priceController.text.replaceAll(',', '')),
       totalSlots:
           widget.type == RoomTypeEnum.singleSelfContained ? 1 : 2,
+      roomCount: _roomCount,
     );
 
     Navigator.pop(context, room);
@@ -167,6 +169,83 @@ class _AddRoomScreenState extends State<AddRoomScreen> {
                               color: Color(0xFF0D1147)),
                         ),
                       ],
+                    ),
+                  ],
+                ),
+              ),
+
+              const SizedBox(height: 16),
+
+              _SectionLabel2(
+                  icon: Icons.meeting_room_outlined,
+                  label: 'Number of Rooms'),
+              const SizedBox(height: 10),
+              Container(
+                padding: const EdgeInsets.symmetric(
+                    horizontal: 16, vertical: 14),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: Colors.grey.shade200),
+                ),
+                child: Row(
+                  children: [
+                    GestureDetector(
+                      onTap: _roomCount > 1
+                          ? () => setState(() => _roomCount--)
+                          : null,
+                      child: Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: _roomCount > 1
+                              ? const Color(0xFF006B4F).withValues(alpha: 0.08)
+                              : Colors.grey.shade100,
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Icon(
+                          Icons.remove_rounded,
+                          color: _roomCount > 1
+                              ? const Color(0xFF006B4F)
+                              : Colors.grey.shade400,
+                          size: 18,
+                        ),
+                      ),
+                    ),
+                    Expanded(
+                      child: Column(
+                        children: [
+                          Text(
+                            '$_roomCount',
+                            style: const TextStyle(
+                              fontSize: 22,
+                              fontWeight: FontWeight.w800,
+                              color: Color(0xFF0D1147),
+                            ),
+                          ),
+                          Text(
+                            _roomCount == 1 ? 'room' : 'rooms',
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: Colors.grey.shade500,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    GestureDetector(
+                      onTap: () => setState(() => _roomCount++),
+                      child: Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF006B4F).withValues(alpha: 0.08),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: const Icon(
+                          Icons.add_rounded,
+                          color: Color(0xFF006B4F),
+                          size: 18,
+                        ),
+                      ),
                     ),
                   ],
                 ),
