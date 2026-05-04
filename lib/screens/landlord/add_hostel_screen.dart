@@ -98,19 +98,18 @@ class _AddHostelScreenState extends State<AddHostelScreen> {
 
       final createdRooms = <LandlordRoom>[];
       for (final room in _rooms) {
-        for (var index = 0; index < room.roomCount; index++) {
-          final created = await ApiService.createRoom(
+        final created = await ApiService.createRoom(
+          hostelId: createdHostel.id,
+          room: LandlordRoom(
+            id: room.id,
             hostelId: createdHostel.id,
-            room: LandlordRoom(
-              id: room.id,
-              hostelId: createdHostel.id,
-              type: room.type,
-              pricePerMonth: room.pricePerMonth,
-              totalSlots: room.totalSlots,
-            ),
-          );
-          createdRooms.add(created);
-        }
+            type: room.type,
+            pricePerMonth: room.pricePerMonth,
+            totalSlots: room.totalSlots,
+            roomCount: room.roomCount,
+          ),
+        );
+        createdRooms.add(created);
       }
 
       final hydrated = LandlordHostel(

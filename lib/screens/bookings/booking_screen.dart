@@ -371,7 +371,7 @@ class _BookingScreenState extends State<BookingScreen>
                       _formatPrice(widget.roomType.price)),
                   _SummaryEntry(
                       'Availability',
-                      '${widget.roomType.availableSpaces} space'
+                      '${widget.roomType.availableSpaces} slot'
                           '${widget.roomType.availableSpaces != 1 ? 's' : ''} left'),
                 ]),
                 const SizedBox(height: 16),

@@ -1,6 +1,5 @@
 import 'package:clerk_auth/clerk_auth.dart' as clerk_auth;
 import 'package:clerk_flutter/clerk_flutter.dart';
-import 'package:flutter/material.dart';
 import 'package:student_hostel_management/screens/university/university_models.dart';
 import 'api_client.dart';
 
@@ -9,12 +8,12 @@ class AuthService {
 
   static Future<({bool firstLogin, String role})> login({
     required ClerkAuthState auth,
-    required String email,
+    required String identifier,
     required String password,
   }) async {
     await auth.attemptSignIn(
       strategy: clerk_auth.Strategy.password,
-      identifier: email,
+      identifier: identifier,
       password: password,
     );
 
@@ -50,8 +49,10 @@ class AuthService {
     required String landlordCode,
     required String password,
   }) async {
-    throw UnimplementedError(
-      'Landlord code sign-in is not supported by the current API. Use email and password instead.',
+    return login(
+      auth: auth,
+      identifier: landlordCode,
+      password: password,
     );
   }
 
@@ -77,6 +78,11 @@ static Future<Map<String, dynamic>> getStudentMe() async {
 
 static Future<Map<String, dynamic>> getUniversityMe() async {
   final response = await _dio.get('/university/me');
+  return Map<String, dynamic>.from(response.data['data'] as Map);
+}
+
+static Future<Map<String, dynamic>> getLandlordMe() async {
+  final response = await _dio.get('/landlord/me');
   return Map<String, dynamic>.from(response.data['data'] as Map);
 }
 
@@ -182,8 +188,8 @@ static Future<void> loadUniversityProfile() async {
   try {
     final me = await getUniversityMe();
     UniversityStore.setFromApiData(me);
-  } catch (e) {
-    debugPrint('Failed to load university profile: $e');
+  } catch (_) {
+    // The caller owns user-facing error handling for bootstrap/profile loads.
   }
 }
 }

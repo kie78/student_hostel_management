@@ -43,6 +43,22 @@ class LandlordRoom {
   });
 
   int get availableSlots => totalSlots - occupiedSlots;
+  int get totalBedSlots => roomCount * totalSlots;
+  int get remainingBedSlots {
+    final remaining = totalBedSlots - occupiedSlots;
+    return remaining < 0 ? 0 : remaining;
+  }
+  int get availableRoomCount {
+    if (totalSlots <= 0) return 0;
+    final count = remainingBedSlots ~/ totalSlots;
+    if (count < 0) return 0;
+    return count > roomCount ? roomCount : count;
+  }
+  int get occupiedRoomCount {
+    final occupied = roomCount - availableRoomCount;
+    if (occupied < 0) return 0;
+    return occupied > roomCount ? roomCount : occupied;
+  }
 
   String get typeName {
     switch (type) {
@@ -62,23 +78,37 @@ class LandlordRoom {
     }
   }
 
-  /// Parse a room from the API response shape:
-  /// { id, roomType, price, capacity, occupiedSlots, isAvailable }
+  /// Parse a room from the API response shape.
   factory LandlordRoom.fromApi(Map<String, dynamic> json, String hostelId) {
-    final rawType = json['roomType'] as String? ?? '';
+    final rawType = (json['roomType'] ?? json['room_type'] ?? '').toString();
     final type = rawType == 'double_self_contained'
         ? RoomTypeEnum.doubleSelfContained
         : RoomTypeEnum.singleSelfContained;
+
+    final totalRooms = (json['total_rooms'] as num?)?.toInt() ??
+        (json['totalRooms'] as num?)?.toInt() ??
+        (json['number_of_rooms'] as num?)?.toInt() ??
+        (json['numberOfRooms'] as num?)?.toInt() ??
+        1;
+    final capacity = (json['capacity'] as num?)?.toInt() ?? 0;
+    final occupiedSlots = (json['occupied_slots'] as num?)?.toInt() ??
+        (json['occupiedSlots'] as num?)?.toInt() ??
+        0;
+    final availableSlots = (json['available_slots'] as num?)?.toInt() ??
+        (json['availableSlots'] as num?)?.toInt() ??
+        ((totalRooms * capacity) - occupiedSlots);
 
     return LandlordRoom(
       id: json['id'] as String,
       hostelId: hostelId,
       type: type,
       pricePerMonth: double.tryParse(json['price'].toString()) ?? 0,
-      totalSlots: (json['capacity'] as num?)?.toInt() ?? 0,
-      roomCount: 1,
-      occupiedSlots: (json['occupiedSlots'] as num?)?.toInt() ?? 0,
-      isAvailable: json['isAvailable'] as bool? ?? true,
+      totalSlots: capacity,
+      roomCount: totalRooms,
+      occupiedSlots: occupiedSlots,
+      isAvailable: json['isAvailable'] as bool? ??
+          json['is_available'] as bool? ??
+          availableSlots > 0,
     );
   }
 
@@ -88,6 +118,7 @@ class LandlordRoom {
             ? 'single_self_contained'
             : 'double_self_contained',
         'price': pricePerMonth.toInt(),
+        'number_of_rooms': roomCount,
         'capacity': totalSlots,
       };
 }
@@ -119,9 +150,12 @@ class LandlordHostel {
     this.isActive = true,
   });
 
-  int get totalRooms => rooms.fold(0, (sum, r) => sum + r.totalSlots);
-  int get occupiedRooms => rooms.fold(0, (sum, r) => sum + r.occupiedSlots);
-  int get availableRooms => totalRooms - occupiedRooms;
+  int get totalRooms => rooms.fold(0, (sum, r) => sum + r.roomCount);
+  int get occupiedRooms => rooms.fold(0, (sum, r) => sum + r.occupiedRoomCount);
+  int get availableRooms => rooms.fold(0, (sum, r) => sum + r.availableRoomCount);
+  int get totalBedSlots => rooms.fold(0, (sum, r) => sum + r.totalBedSlots);
+  int get occupiedBedSlots => rooms.fold(0, (sum, r) => sum + r.occupiedSlots);
+  int get availableBedSlots => rooms.fold(0, (sum, r) => sum + r.remainingBedSlots);
   double get occupancyRate =>
       totalRooms > 0 ? (occupiedRooms / totalRooms) * 100 : 0;
   double get lowestPrice => rooms.isEmpty
@@ -549,12 +583,14 @@ class ApiService {
     required String hostelId,
     required String roomId,
     double? price,
+    int? numberOfRooms,
     int? capacity,
     String? roomType,
   }) async {
     final opts = await _authOptions();
     final body = <String, dynamic>{
       if (price != null) 'price': price.toInt(),
+      if (numberOfRooms != null) 'number_of_rooms': numberOfRooms,
       if (capacity != null) 'capacity': capacity,
       if (roomType != null) 'room_type': roomType,
     };
@@ -676,8 +712,8 @@ class LandlordStore {
   static int get pendingBookings =>
       _bookings.where((b) => b.status == BookingStatusEnum.pending).length;
 
-  static int get totalOccupied =>
-      _bookings.where((b) => b.status == BookingStatusEnum.active).length;
+    static int get totalOccupied =>
+      _hostels.fold(0, (sum, h) => sum + h.occupiedRooms);
 
   static int get totalCapacity =>
       _hostels.fold(0, (sum, h) => sum + h.totalRooms);

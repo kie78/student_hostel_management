@@ -10,29 +10,78 @@ class Room {
   final String id;
   final String roomType;
   final double price;
+  final int totalRooms;
   final int capacity;
   final int occupiedSlots;
+  final int availableSlots;
   final bool isAvailable;
 
   const Room({
     required this.id,
     required this.roomType,
     required this.price,
+    required this.totalRooms,
     required this.capacity,
     required this.occupiedSlots,
+    required this.availableSlots,
     required this.isAvailable,
   });
 
-  int get availableSpaces => capacity - occupiedSlots;
+  int get availableSpaces => availableSlots;
+  int get totalBeds => totalRooms * capacity;
+  int get availableRooms {
+    if (capacity <= 0 || availableSlots <= 0) return 0;
+    return ((availableSlots + capacity - 1) / capacity).floor();
+  }
+
+  static String _readString(Map<String, dynamic> json, List<String> keys) {
+    for (final key in keys) {
+      final value = json[key];
+      if (value is String && value.isNotEmpty) return value;
+    }
+    return '';
+  }
+
+  static int _readInt(Map<String, dynamic> json, List<String> keys) {
+    for (final key in keys) {
+      final value = json[key];
+      if (value is int) return value;
+      if (value is num) return value.toInt();
+      if (value is String) {
+        final parsed = int.tryParse(value);
+        if (parsed != null) return parsed;
+      }
+    }
+    return 0;
+  }
 
   factory Room.fromJson(Map<String, dynamic> json) {
+    final totalRooms = _readInt(json, const [
+      'total_rooms',
+      'totalRooms',
+      'number_of_rooms',
+      'numberOfRooms',
+    ]);
+    final capacity = _readInt(json, const ['capacity']);
+    final occupiedSlots =
+        _readInt(json, const ['occupied_slots', 'occupiedSlots']);
+    final derivedAvailableSlots = (totalRooms * capacity) - occupiedSlots;
+    final availableSlots =
+        _readInt(json, const ['available_slots', 'availableSlots']);
+
     return Room(
-      id: json['id'] ?? '',
-      roomType: json['roomType'] ?? '',
+      id: _readString(json, const ['id']),
+      roomType: _readString(json, const ['roomType', 'room_type']),
       price: double.tryParse(json['price'].toString()) ?? 0,
-      capacity: json['capacity'] ?? 0,
-      occupiedSlots: json['occupiedSlots'] ?? 0,
-      isAvailable: json['isAvailable'] ?? false,
+      totalRooms: totalRooms > 0 ? totalRooms : 1,
+      capacity: capacity,
+      occupiedSlots: occupiedSlots,
+      availableSlots: availableSlots > 0 || derivedAvailableSlots <= 0
+          ? availableSlots
+          : derivedAvailableSlots,
+      isAvailable: json['isAvailable'] as bool? ??
+          json['is_available'] as bool? ??
+          (availableSlots > 0 || derivedAvailableSlots > 0),
     );
   }
 }
@@ -47,7 +96,7 @@ extension RoomCompat on Room {
       .join(' ');
 
   double get pricePerSemester => price;
-  int get totalSlots => capacity;
+  int get totalSlots => totalBeds;
   String get description => 'Comfortable $name with secure student-friendly setup.';
   String get size => 'Standard';
   int get maxOccupants => capacity;
@@ -79,10 +128,38 @@ class Hostel {
     required this.rooms,
   });
 
-  int get availableRooms => rooms.where((r) => r.isAvailable).length;
+  int get availableRooms =>
+      rooms.fold(0, (sum, room) => sum + room.availableRooms);
   double get minPrice => rooms.isEmpty
       ? 0
       : rooms.map((r) => r.price).reduce((a, b) => a < b ? a : b);
+
+  static List<Room> _normalizedRooms(List rawRooms) {
+    final grouped = <String, Room>{};
+    for (final raw in rawRooms) {
+      if (raw is! Map) continue;
+      final room = Room.fromJson(Map<String, dynamic>.from(raw));
+      final key = room.roomType.toLowerCase();
+      final existing = grouped[key];
+      if (existing == null) {
+        grouped[key] = room;
+        continue;
+      }
+
+      grouped[key] = Room(
+        id: existing.id,
+        roomType: existing.roomType,
+        price: existing.price <= room.price ? existing.price : room.price,
+        totalRooms: existing.totalRooms + room.totalRooms,
+        capacity: existing.capacity > 0 ? existing.capacity : room.capacity,
+        occupiedSlots: existing.occupiedSlots + room.occupiedSlots,
+        availableSlots: existing.availableSlots + room.availableSlots,
+        isAvailable: existing.isAvailable || room.isAvailable,
+      );
+    }
+
+    return grouped.values.toList();
+  }
 
   factory Hostel.fromJson(Map<String, dynamic> json) {
     final rawRooms = json['rooms'] as List? ?? [];
@@ -94,7 +171,7 @@ class Hostel {
       description: json['description'] ?? '',
       images: rawImages.map((e) => e.toString()).toList(),
       whatsappNumber: json['whatsappNumber'] ?? '',
-      rooms: rawRooms.map((r) => Room.fromJson(r as Map<String, dynamic>)).toList(),
+      rooms: _normalizedRooms(rawRooms),
     );
   }
 }
@@ -904,7 +981,7 @@ class _HostelCard extends StatelessWidget {
                                   borderRadius: BorderRadius.circular(20),
                                 ),
                                 child: Text(
-                                  formatRoomType(r.roomType),
+                                  '${formatRoomType(r.roomType)} · ${r.totalRooms} room${r.totalRooms != 1 ? 's' : ''}',
                                   style: TextStyle(
                                       fontSize: 11,
                                       color: r.isAvailable

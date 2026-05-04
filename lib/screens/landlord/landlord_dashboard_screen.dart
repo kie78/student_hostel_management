@@ -645,7 +645,7 @@ class _LandlordDashboardScreenState extends State<LandlordDashboardScreen>
             Expanded(
               child: _StatCard(
                 value: '$total',
-                label: 'Capacity',
+                label: 'Rooms',
                 icon: Icons.meeting_room_rounded,
                 color: const Color(0xFF1A1F71),
               ),
@@ -658,7 +658,7 @@ class _LandlordDashboardScreenState extends State<LandlordDashboardScreen>
             Expanded(
               child: _StatCard(
                 value: '$occupied/$total',
-                label: 'Occupied',
+                label: 'Occupied Rooms',
                 icon: Icons.bed_rounded,
                 color: const Color(0xFF7B2FF7),
               ),
@@ -667,7 +667,7 @@ class _LandlordDashboardScreenState extends State<LandlordDashboardScreen>
             Expanded(
               child: _StatCard(
                 value: '$available',
-                label: 'Available',
+                label: 'Available Rooms',
                 icon: Icons.event_available_rounded,
                 color: const Color(0xFFB45309),
               ),

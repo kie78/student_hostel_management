@@ -207,7 +207,7 @@ class _RoomDetailsScreenState extends State<RoomDetailsScreen>
                               _StatChip(
                                 icon: Icons.door_front_door,
                                 label: '${widget.hostel.availableRooms}',
-                                sublabel: 'rooms available',
+                                sublabel: 'rooms left',
                               ),
                               const SizedBox(width: 12),
                               _StatChip(
@@ -381,6 +381,11 @@ class _RoomDetailsScreenState extends State<RoomDetailsScreen>
                             children: [
                               _RoomInfoBadge(icon: Icons.people, label: '${room.maxOccupants} person'),
                               const SizedBox(width: 8),
+                              _RoomInfoBadge(
+                                icon: Icons.meeting_room_outlined,
+                                label: '${room.totalRooms} room${room.totalRooms != 1 ? 's' : ''}',
+                              ),
+                              const SizedBox(width: 8),
                               if (room.hasEnsuite)
                                 _RoomInfoBadge(icon: Icons.shower, label: 'Ensuite'),
                             ],
@@ -409,7 +414,7 @@ class _RoomDetailsScreenState extends State<RoomDetailsScreen>
                               ),
                               if (room.availableSpaces > 0)
                                 Text(
-                                  '${room.availableSpaces} space${room.availableSpaces > 1 ? 's' : ''} left',
+                                  '${room.availableSpaces} slot${room.availableSpaces > 1 ? 's' : ''} left',
                                   style: TextStyle(
                                     color: room.availableSpaces <= 2 ? Colors.orange : const Color(0xFF00C48C),
                                     fontSize: 12,

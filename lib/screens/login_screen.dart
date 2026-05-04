@@ -5,12 +5,12 @@ import 'package:flutter/services.dart';
 import 'package:student_hostel_management/screens/bookings/student_dashboard_screen.dart';
 import 'role_select_screen.dart';
 import 'register_screen.dart';
-import 'reset_password_screen.dart';
 import 'university/university_dashboard_screen.dart';
 import 'landlord/landlord_dashboard_screen.dart';
 import 'landlord/landlord_models.dart';
 import 'package:dio/dio.dart';
 import '../services/auth_service.dart';
+import '../services/app_error.dart';
 import '../services/api_client.dart';
 
 
@@ -48,7 +48,6 @@ void didChangeDependencies() {
 
   bool _obscurePassword = true;
   bool _isLoading = false;
-  bool _isFirstLogin = false; // for Landlord & University
 
   late AnimationController _entryController;
   late AnimationController _shakeController;
@@ -94,9 +93,9 @@ void didChangeDependencies() {
       case UserRole.student:
         return 'Sign in with your student email and password.';
       case UserRole.landlord:
-        return 'Sign in with the landlord email and password provided by your university.';
+        return 'Sign in with your landlord email and password.';
       case UserRole.university:
-        return 'Sign in with the credentials sent to your institution email.';
+        return 'Sign in with your institution email and password.';
     }
   }
 
@@ -164,12 +163,9 @@ void didChangeDependencies() {
     String? role,
   }) async {
     final resolvedRole = role ?? _roleKey(widget.role);
+    var resolvedFirstLogin = firstLogin;
 
     await _configureAuthenticatedSession();
-
-    if (resolvedRole == 'university') {
-      await AuthService.loadUniversityProfile();
-    }
 
     if (resolvedRole == 'landlord' || resolvedRole == 'university') {
       ApiService.init(() async {
@@ -180,24 +176,27 @@ void didChangeDependencies() {
           return null;
         }
       });
+
+      if (resolvedRole == 'landlord') {
+        final me = await AuthService.getLandlordMe();
+        resolvedFirstLogin = _readBoolFlag(me['firstLogin']) ?? resolvedFirstLogin;
+      } else {
+        final me = await AuthService.getUniversityMe();
+        resolvedFirstLogin = _readBoolFlag(me['firstLogin']) ?? resolvedFirstLogin;
+        AuthService.loadUniversityProfile();
+      }
     }
 
     if (!mounted) return;
 
-    if (firstLogin &&
+    if (resolvedFirstLogin &&
         (resolvedRole == 'landlord' || resolvedRole == 'university')) {
-      Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (_) => ResetPasswordScreen(
-            role: resolvedRole == 'landlord'
-                ? UserRole.landlord
-                : UserRole.university,
-            isFirstLogin: true,
-          ),
-        ),
+      final updated = await _showFirstLoginResetModal(
+        resolvedRole == 'landlord' ? UserRole.landlord : UserRole.university,
       );
-      return;
+      if (updated != true || !mounted) {
+        return;
+      }
     }
 
     switch (resolvedRole) {
@@ -243,6 +242,17 @@ void didChangeDependencies() {
     await _completeLoginFlow(firstLogin: firstLogin, role: resolvedRole);
   }
 
+  bool? _readBoolFlag(dynamic value) {
+    if (value is bool) return value;
+    if (value is String) {
+      final normalized = value.trim().toLowerCase();
+      if (normalized == 'true') return true;
+      if (normalized == 'false') return false;
+    }
+    if (value is num) return value != 0;
+    return null;
+  }
+
   Future<void> _submit() async {
   if (!_formKey.currentState!.validate()) {
     _shakeController.forward(from: 0);
@@ -253,11 +263,18 @@ void didChangeDependencies() {
   HapticFeedback.mediumImpact();
 
   try {
-    final result = await AuthService.login(
-      auth: _clerkAuth,
-      email: _emailController.text.trim(),
-      password: _passwordController.text,
-    );
+    final identifier = _emailController.text.trim();
+    final result = widget.role == UserRole.landlord && !identifier.contains('@')
+        ? await AuthService.loginWithCode(
+            auth: _clerkAuth,
+            landlordCode: identifier,
+            password: _passwordController.text,
+          )
+        : await AuthService.login(
+            auth: _clerkAuth,
+            identifier: identifier,
+            password: _passwordController.text,
+          );
     await _completeLoginFlow(
       firstLogin: result.firstLogin,
       role: result.role,
@@ -265,7 +282,7 @@ void didChangeDependencies() {
 
   } on DioException catch (e) {
     final statusCode = e.response?.statusCode;
-    final message = e.response?.data['message'] ?? 'Something went wrong';
+    final message = AppError.message(e);
     if (statusCode == 403) {
       _showError('Your account has been suspended. Contact support.');
     } else {
@@ -273,12 +290,11 @@ void didChangeDependencies() {
     }
     _shakeController.forward(from: 0);
   } catch (e) {
-    final raw = e.toString();
-    final cleaned = raw
-        .replaceAll(' (ERROR RECEIVED FROM SERVER)', '')
-        .replaceAll('\n', ' ')
-        .trim();
-    if (cleaned.toLowerCase().contains('already signed in')) {
+    final cleaned = AppError.message(e, fallback: 'Login failed. Please try again.');
+    final attemptedCodeLogin =
+        widget.role == UserRole.landlord &&
+        !_emailController.text.trim().contains('@');
+    if (cleaned == 'You are already signed in.') {
       final claims = _clerkAuth.user?.publicMetadata;
       await _completeLoginFlow(
         firstLogin: claims?['firstLogin'] == true,
@@ -286,7 +302,16 @@ void didChangeDependencies() {
       );
       return;
     }
-    _showError(cleaned.isNotEmpty ? cleaned : 'Login failed. Please try again.');
+    if (attemptedCodeLogin &&
+        cleaned ==
+            'The sign-in details are invalid. Please check them and try again.') {
+      _showError(
+        'Landlord code sign-in is not enabled in the current auth configuration. Use the landlord email for now, or enable username/code sign-in in Clerk and the backend.',
+      );
+      _shakeController.forward(from: 0);
+      return;
+    }
+    _showError(cleaned);
     _shakeController.forward(from: 0);
   } finally {
     if (mounted) setState(() => _isLoading = false);
@@ -312,6 +337,25 @@ void _goToRoleSelection() {
   Navigator.of(context).pushAndRemoveUntil(
     MaterialPageRoute(builder: (_) => const RoleSelectScreen()),
     (route) => false,
+  );
+}
+
+Future<bool?> _showFirstLoginResetModal(UserRole role) {
+  return showDialog<bool>(
+    context: context,
+    barrierDismissible: false,
+    builder: (_) => _FirstLoginResetDialog(
+      role: role,
+      roleColor: _roleColor,
+      roleAccent: _roleAccent,
+      onSubmit: (newPassword) async {
+        if (role == UserRole.landlord) {
+          await ApiService.resetPassword(newPassword);
+        } else {
+          await AuthService.resetPasswordUniversity(newPassword: newPassword);
+        }
+      },
+    ),
   );
 }
 
@@ -347,62 +391,6 @@ void _goToRoleSelection() {
                             _buildHintBanner(),
                             const SizedBox(height: 28),
                             _buildFields(),
-                            const SizedBox(height: 24),
-                            if (widget.role != UserRole.landlord)
-                              Align(
-                                alignment: Alignment.centerRight,
-                                child: GestureDetector(
-                                  onTap: () => Navigator.push(
-                                    context,
-                                    MaterialPageRoute(
-                                      builder: (_) => ResetPasswordScreen(
-                                        role: widget.role,
-                                        isFirstLogin: false,
-                                      ),
-                                    ),
-                                  ),
-                                  child: Text(
-                                    'Forgot Password?',
-                                    style: TextStyle(
-                                      color: _roleColor,
-                                      fontWeight: FontWeight.w600,
-                                      fontSize: 13,
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            if (widget.role == UserRole.landlord ||
-                                widget.role == UserRole.university) ...[
-                              const SizedBox(height: 4),
-                              Row(
-                                children: [
-                                  Checkbox(
-                                    value: _isFirstLogin,
-                                    activeColor: _roleColor,
-                                    shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.circular(4),
-                                    ),
-                                    onChanged: (v) =>
-                                        setState(() => _isFirstLogin = v!),
-                                  ),
-                                  Expanded(
-                                    child: GestureDetector(
-                                      onTap: () => setState(
-                                        () =>
-                                            _isFirstLogin = !_isFirstLogin,
-                                      ),
-                                      child: Text(
-                                        'This is my first time signing in (reset password)',
-                                        style: TextStyle(
-                                          fontSize: 13,
-                                          color: Colors.grey.shade600,
-                                        ),
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ],
                             const SizedBox(height: 32),
                             AnimatedBuilder(
                               animation: _shake,
@@ -740,6 +728,8 @@ void _goToRoleSelection() {
           controller: _passwordController,
           roleColor: _roleColor,
           obscure: _obscurePassword,
+          label: 'Password',
+          hint: 'Enter the password provided by your university',
           onToggle: () =>
               setState(() => _obscurePassword = !_obscurePassword),
         ),
@@ -769,8 +759,8 @@ void _goToRoleSelection() {
           controller: _passwordController,
           roleColor: _roleColor,
           obscure: _obscurePassword,
-          label: 'Temporary Password',
-          hint: 'Enter the password from your email',
+          label: 'Password',
+          hint: 'Enter your password',
           onToggle: () =>
               setState(() => _obscurePassword = !_obscurePassword),
         ),
@@ -778,6 +768,241 @@ void _goToRoleSelection() {
     );
   }
 
+}
+
+class _FirstLoginResetDialog extends StatefulWidget {
+  final UserRole role;
+  final Color roleColor;
+  final Color roleAccent;
+  final Future<void> Function(String newPassword) onSubmit;
+
+  const _FirstLoginResetDialog({
+    required this.role,
+    required this.roleColor,
+    required this.roleAccent,
+    required this.onSubmit,
+  });
+
+  @override
+  State<_FirstLoginResetDialog> createState() => _FirstLoginResetDialogState();
+}
+
+class _FirstLoginResetDialogState extends State<_FirstLoginResetDialog> {
+  final _formKey = GlobalKey<FormState>();
+  final _newPasswordController = TextEditingController();
+  final _confirmPasswordController = TextEditingController();
+  bool _obscureNew = true;
+  bool _obscureConfirm = true;
+  bool _isSubmitting = false;
+
+  @override
+  void dispose() {
+    _newPasswordController.dispose();
+    _confirmPasswordController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _submit() async {
+    if (!_formKey.currentState!.validate()) return;
+
+    setState(() => _isSubmitting = true);
+    try {
+      await widget.onSubmit(_newPasswordController.text);
+      if (!mounted) return;
+      Navigator.of(context).pop(true);
+    } on DioException catch (e) {
+      final message = AppError.message(
+        e,
+        fallback: 'Failed to reset password.',
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(message), backgroundColor: Colors.red.shade700),
+      );
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text('Failed to reset password.'),
+          backgroundColor: Colors.red.shade700,
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _isSubmitting = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final roleLabel = switch (widget.role) {
+      UserRole.student => 'student',
+      UserRole.landlord => 'landlord',
+      UserRole.university => 'university',
+    };
+
+    return PopScope(
+      canPop: false,
+      child: Dialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+        child: ConstrainedBox(
+          constraints: BoxConstraints(
+            maxHeight: MediaQuery.of(context).size.height * 0.88,
+          ),
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(24),
+            child: Form(
+              key: _formKey,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                Container(
+                  width: 56,
+                  height: 56,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    gradient: LinearGradient(
+                      colors: [widget.roleColor, widget.roleAccent],
+                    ),
+                  ),
+                  child: const Icon(Icons.lock_reset, color: Colors.white),
+                ),
+                const SizedBox(height: 16),
+                const Text(
+                  'Set Your New Password',
+                  style: TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.w800,
+                    color: Color(0xFF0D1147),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'This is your first $roleLabel login. You must choose a personal password before continuing.',
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: Colors.grey.shade600,
+                    height: 1.5,
+                  ),
+                ),
+                const SizedBox(height: 20),
+                _PasswordField(
+                  controller: _newPasswordController,
+                  roleColor: widget.roleColor,
+                  obscure: _obscureNew,
+                  label: 'New Password',
+                  hint: 'At least 8 characters',
+                  onToggle: () => setState(() => _obscureNew = !_obscureNew),
+                ),
+                const SizedBox(height: 14),
+                TextFormField(
+                  controller: _confirmPasswordController,
+                  obscureText: _obscureConfirm,
+                  validator: (value) {
+                    if (value == null || value.isEmpty) {
+                      return 'Please confirm your password';
+                    }
+                    if (value != _newPasswordController.text) {
+                      return 'Passwords do not match';
+                    }
+                    return null;
+                  },
+                  style: const TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w500,
+                    color: Color(0xFF0D1147),
+                  ),
+                  decoration: InputDecoration(
+                    labelText: 'Confirm Password',
+                    hintText: 'Re-enter your new password',
+                    prefixIcon: Icon(
+                      Icons.lock_outline,
+                      color: widget.roleColor,
+                      size: 20,
+                    ),
+                    suffixIcon: GestureDetector(
+                      onTap: () =>
+                          setState(() => _obscureConfirm = !_obscureConfirm),
+                      child: Icon(
+                        _obscureConfirm
+                            ? Icons.visibility_outlined
+                            : Icons.visibility_off_outlined,
+                        color: Colors.grey.shade400,
+                        size: 20,
+                      ),
+                    ),
+                    filled: true,
+                    fillColor: Colors.white,
+                    labelStyle:
+                        TextStyle(color: Colors.grey.shade500, fontSize: 13),
+                    hintStyle:
+                        TextStyle(color: Colors.grey.shade300, fontSize: 13),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(14),
+                      borderSide: BorderSide(color: Colors.grey.shade200),
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(14),
+                      borderSide: BorderSide(color: Colors.grey.shade200),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(14),
+                      borderSide:
+                          BorderSide(color: widget.roleColor, width: 1.5),
+                    ),
+                    errorBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(14),
+                      borderSide: const BorderSide(color: Colors.red),
+                    ),
+                    focusedErrorBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(14),
+                      borderSide: const BorderSide(color: Colors.red, width: 1.5),
+                    ),
+                    contentPadding:
+                        const EdgeInsets.symmetric(horizontal: 16, vertical: 15),
+                  ),
+                ),
+                const SizedBox(height: 20),
+                GestureDetector(
+                  onTap: _isSubmitting ? null : _submit,
+                  child: Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.symmetric(vertical: 15),
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        colors: [widget.roleColor, widget.roleAccent],
+                      ),
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    child: Center(
+                      child: _isSubmitting
+                          ? const SizedBox(
+                              width: 22,
+                              height: 22,
+                              child: CircularProgressIndicator(
+                                color: Colors.white,
+                                strokeWidth: 2.5,
+                              ),
+                            )
+                          : const Text(
+                              'Set Password & Continue',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.w700,
+                                fontSize: 15,
+                              ),
+                            ),
+                    ),
+                  ),
+                ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 // ─── Reusable Input Field ──────────────────────────────────────────────────────

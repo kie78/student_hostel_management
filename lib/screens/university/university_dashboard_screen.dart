@@ -4,6 +4,7 @@ import 'package:student_hostel_management/screens/university/university_models.d
 import 'university_profile_screen.dart';
 import 'register_landlord_screen.dart';
 import 'package:dio/dio.dart';
+import '../../services/app_error.dart';
 import '../../services/auth_service.dart';
 
 class UniversityDashboardScreen extends StatefulWidget {
@@ -25,6 +26,7 @@ class _UniversityDashboardScreenState extends State<UniversityDashboardScreen>
   List<Map<String, dynamic>> _students = [];
   List<Map<String, dynamic>> _hostels = [];
   bool _isLoading = true;
+  String? _errorMessage;
 
   int get _totalLandlords => _landlords.length;
   int get _totalStudents => _students.length;
@@ -129,7 +131,10 @@ class _UniversityDashboardScreenState extends State<UniversityDashboardScreen>
   }
 
   Future<void> _loadData() async {
-    setState(() => _isLoading = true);
+    setState(() {
+      _isLoading = true;
+      _errorMessage = null;
+    });
     try {
       final results = await Future.wait([
         AuthService.getLandlords(),
@@ -142,7 +147,12 @@ class _UniversityDashboardScreenState extends State<UniversityDashboardScreen>
         _hostels = List<Map<String, dynamic>>.from(results[2]);
       });
     } on DioException catch (e) {
-      debugPrint('Failed to load data: ${e.message}');
+      setState(() {
+        _errorMessage = AppError.message(
+          e,
+          fallback: 'Could not load university data. Pull to retry.',
+        );
+      });
     } finally {
       setState(() => _isLoading = false);
     }
@@ -414,6 +424,14 @@ class _UniversityDashboardScreenState extends State<UniversityDashboardScreen>
                     padding: EdgeInsets.all(20),
                     child: Center(child: CircularProgressIndicator()),
                   )
+                else if (_errorMessage != null)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 20),
+                    child: _LoadErrorCard(
+                      message: _errorMessage!,
+                      onRetry: _loadData,
+                    ),
+                  )
                 else
                   ..._hostels.map(
                     (h) => Padding(
@@ -454,14 +472,15 @@ class _UniversityDashboardScreenState extends State<UniversityDashboardScreen>
                 ),
                 const SizedBox(height: 12),
 
-                ..._landlords
-                    .take(3)
-                    .map(
-                      (l) => Padding(
-                        padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
-                        child: _LandlordMiniCard(landlord: l),
+                if (_errorMessage == null)
+                  ..._landlords
+                      .take(3)
+                      .map(
+                        (l) => Padding(
+                          padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
+                          child: _LandlordMiniCard(landlord: l),
+                        ),
                       ),
-                    ),
 
                 const SizedBox(height: 100),
               ],
@@ -1544,6 +1563,78 @@ class _LandlordMiniCard extends StatelessWidget {
 }
 
 // ─── Shared Helpers ────────────────────────────────────────────────────────────
+
+class _LoadErrorCard extends StatelessWidget {
+  final String message;
+  final VoidCallback onRetry;
+
+  const _LoadErrorCard({required this.message, required this.onRetry});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.04),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(
+                Icons.info_outline,
+                color: Color(0xFF7B2FF7),
+                size: 20,
+              ),
+              const SizedBox(width: 10),
+              const Expanded(
+                child: Text(
+                  'Unable to Load Dashboard',
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w700,
+                    color: Color(0xFF0D1147),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Text(
+            message,
+            style: TextStyle(
+              fontSize: 12.5,
+              color: Colors.grey.shade600,
+              height: 1.5,
+            ),
+          ),
+          const SizedBox(height: 14),
+          TextButton.icon(
+            onPressed: onRetry,
+            style: TextButton.styleFrom(
+              foregroundColor: const Color(0xFF7B2FF7),
+              backgroundColor: const Color(0xFF7B2FF7).withValues(alpha: 0.08),
+            ),
+            icon: const Icon(Icons.refresh_rounded, size: 16),
+            label: const Text(
+              'Retry',
+              style: TextStyle(fontWeight: FontWeight.w700),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
 
 class _SearchBar extends StatelessWidget {
   final TextEditingController controller;
